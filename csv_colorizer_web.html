@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSV Attribute Colorizer — Web</title>
+<style>
+  :root {
+    --bg: #17191d;
+    --panel: #21242a;
+    --panel-edge: #2e323a;
+    --ink: #e8eaed;
+    --ink-dim: #9aa0a8;
+    --accent: #57c7b8;
+    --accent-dim: #2f6d66;
+    --warn: #e0a458;
+    --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+    --sans: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+  }
+
+  /* ---------- サイドパネル ---------- */
+  #sidebar {
+    width: 300px;
+    min-width: 300px;
+    height: 100%;
+    background: var(--panel);
+    border-right: 1px solid var(--panel-edge);
+    overflow-y: auto;
+    padding: 16px 14px 24px;
+    font-size: 13px;
+  }
+  #sidebar h1 {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+  }
+  #sidebar .subtitle {
+    font-size: 11px;
+    color: var(--ink-dim);
+    margin-bottom: 18px;
+  }
+  .step {
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .step-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+  }
+  .row { margin-bottom: 10px; }
+  .row:last-child { margin-bottom: 0; }
+  label.small {
+    display: block;
+    font-size: 11px;
+    color: var(--ink-dim);
+    margin-bottom: 4px;
+  }
+  input[type="text"], select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 13px;
+    font-family: var(--sans);
+  }
+  select:focus, input[type="text"]:focus, button:focus-visible {
+    outline: 2px solid var(--accent-dim);
+    outline-offset: 1px;
+  }
+  .filebtn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    background: var(--bg);
+    border: 1px dashed var(--panel-edge);
+    border-radius: 4px;
+    color: var(--ink-dim);
+    padding: 10px 8px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .filebtn:hover { border-color: var(--accent); color: var(--ink); }
+  .filebtn.loaded { border-style: solid; border-color: var(--accent-dim); color: var(--ink); }
+  input[type="file"] { display: none; }
+
+  button.action {
+    width: 100%;
+    background: var(--accent-dim);
+    color: var(--ink);
+    border: none;
+    border-radius: 4px;
+    padding: 9px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--sans);
+    cursor: pointer;
+    transition: background .15s;
+  }
+  button.action:hover:not(:disabled) { background: var(--accent); color: #0d2925; }
+  button.action:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.ghost {
+    width: 100%;
+    background: transparent;
+    color: var(--ink-dim);
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    padding: 7px 8px;
+    font-size: 12px;
+    font-family: var(--sans);
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  button.ghost:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-dim); }
+  button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .color-row { display: flex; gap: 8px; align-items: center; }
+  .color-row input[type="color"] {
+    flex: 1;
+    height: 30px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    background: var(--bg);
+    padding: 2px;
+    cursor: pointer;
+  }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--ink-dim);
+    cursor: pointer;
+    user-select: none;
+  }
+  .checkbox-row input { accent-color: var(--accent); }
+  .check-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    padding: 8px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+
+  #status {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--ink-dim);
+    line-height: 1.6;
+    padding: 10px 12px;
+    background: var(--bg);
+    border-radius: 6px;
+    min-height: 42px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  #status.warn { color: var(--warn); }
+
+  /* ---------- ビューポート ---------- */
+  #viewport-wrap { flex: 1; position: relative; height: 100%; }
+  #viewport { width: 100%; height: 100%; display: block; }
+
+  #dropzone-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    color: var(--ink-dim);
+    font-size: 14px;
+    letter-spacing: 0.05em;
+  }
+  #dropzone-hint.hidden { display: none; }
+  #viewport-wrap.dragover::after {
+    content: "ここにドロップして読み込む";
+    position: absolute; inset: 12px;
+    border: 2px dashed var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(23,25,29,.7);
+    color: var(--accent);
+    font-size: 15px;
+    pointer-events: none;
+  }
+
+  /* ---------- 凡例 ---------- */
+  #legend {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    background: rgba(33,36,42,.92);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 11px;
+    font-family: var(--mono);
+    min-width: 180px;
+    display: none;
+  }
+  #legend .legend-title {
+    font-family: var(--sans);
+    font-size: 11px;
+    color: var(--ink-dim);
+    margin-bottom: 6px;
+  }
+  #legend-bar {
+    height: 10px;
+    border-radius: 3px;
+    margin-bottom: 4px;
+  }
+  #legend-range { display: flex; justify-content: space-between; color: var(--ink); }
+  #legend-cats { display: flex; flex-direction: column; gap: 4px; }
+  .cat-item { display: flex; align-items: center; gap: 7px; color: var(--ink); }
+  .cat-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .slider-value {
+    font-family: var(--mono);
+    color: var(--ink);
+    float: right;
+  }
+
+  /* ---------- オブジェクトラベル ---------- */
+  #labels {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    --label-size: 11px;
+  }
+  .obj-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-family: var(--mono);
+    font-size: var(--label-size);
+    line-height: 1.45;
+    color: var(--ink);
+    background: rgba(23, 25, 29, 0.72);
+    border-radius: 3px;
+    padding: 2px 6px;
+    white-space: pre;
+    text-align: left;
+    will-change: left, top;
+  }
+  .obj-label .lkey { color: var(--ink-dim); }
+
+  /* ---------- 属性インスペクタ ---------- */
+  #inspector {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+    background: rgba(33,36,42,.94);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    font-family: var(--mono);
+    max-width: 260px;
+    display: none;
+  }
+  #inspector .insp-name {
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 6px;
+    word-break: break-all;
+  }
+  #inspector table { border-collapse: collapse; width: 100%; }
+  #inspector td { padding: 1px 0; vertical-align: top; word-break: break-all; }
+  #inspector td:first-child { color: var(--ink-dim); padding-right: 10px; white-space: nowrap; }
+
+  @media (max-width: 700px) {
+    body { flex-direction: column; }
+    #sidebar { width: 100%; min-width: 0; height: 45%; border-right: none; border-bottom: 1px solid var(--panel-edge); }
+    #viewport-wrap { height: 55%; }
+  }
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <h1>CSV Attribute Colorizer</h1>
+  <div class="subtitle">GLBジオメトリをCSV属性で色分け表示</div>
+
+  <!-- STEP 1: GLB -->
+  <div class="step">
+    <div class="step-label">1. GLBを読み込む</div>
+    <div class="row">
+      <label class="filebtn" id="glb-btn" for="glb-input">クリックして .glb / .gltf を選択<br>(ビューポートへのドロップも可)</label>
+      <input type="file" id="glb-input" accept=".glb,.gltf">
+    </div>
+  </div>
+
+  <!-- STEP 2: CSV -->
+  <div class="step">
+    <div class="step-label">2. CSVを読み込む</div>
+    <div class="row">
+      <label class="filebtn" id="csv-btn" for="csv-input">クリックして .csv を選択</label>
+      <input type="file" id="csv-input" accept=".csv,text/csv">
+    </div>
+    <div class="row">
+      <label class="small" for="id-column">ID列名</label>
+      <select id="id-column" disabled><option>(CSVを読み込んでください)</option></select>
+    </div>
+    <div class="row">
+      <label class="small" for="id-prefix">オブジェクト名の接頭辞(あれば)</label>
+      <input type="text" id="id-prefix" placeholder="例: Cell_">
+    </div>
+  </div>
+
+  <!-- STEP 3: 色分け -->
+  <div class="step">
+    <div class="step-label">3. 色分けする</div>
+    <div class="row">
+      <label class="small" for="attribute">色分けする属性</label>
+      <select id="attribute" disabled><option>(CSVを読み込んでください)</option></select>
+    </div>
+    <div class="row">
+      <label class="small" for="preset">配色</label>
+      <select id="preset">
+        <option value="BLUE_RED">青 → 赤</option>
+        <option value="GREEN_RED">緑 → 赤</option>
+        <option value="BLUE_YELLOW">青 → 黄</option>
+        <option value="GRAYSCALE">グレースケール</option>
+        <option value="CUSTOM">カスタム</option>
+      </select>
+    </div>
+    <div class="row" id="custom-colors" style="display:none">
+      <div class="color-row">
+        <input type="color" id="color-low" value="#1a4ce6" title="開始色(最小値)">
+        <input type="color" id="color-mid" value="#ffffff" title="中間色" style="display:none">
+        <input type="color" id="color-high" value="#e61a1a" title="終了色(最大値)">
+      </div>
+      <div style="margin-top:8px">
+        <label class="checkbox-row"><input type="checkbox" id="use-mid"> 中間色を使う</label>
+      </div>
+    </div>
+    <div class="row">
+      <button class="action" id="apply-btn" disabled>色分けを実行</button>
+      <button class="ghost" id="reset-btn" disabled>色をリセット</button>
+    </div>
+  </div>
+
+  <!-- STEP 4: ラベル -->
+  <div class="step">
+    <div class="step-label">4. ラベル表示</div>
+    <div class="row">
+      <label class="checkbox-row"><input type="checkbox" id="show-labels"> オブジェクトの位置に属性を表示</label>
+    </div>
+    <div class="row">
+      <label class="small">表示する内容(複数選択可)</label>
+      <div id="label-content-list" class="check-list">
+        <label class="checkbox-row"><input type="checkbox" value="__id__" checked> ID(オブジェクト名)</label>
+      </div>
+    </div>
+    <div class="row">
+      <label class="small" for="label-size">文字サイズ <span id="label-size-value" class="slider-value">11px</span></label>
+      <input type="range" id="label-size" min="8" max="24" step="1" value="11">
+    </div>
+    <div class="row">
+      <label class="checkbox-row"><input type="checkbox" id="distance-cull" checked> 遠いラベルを自動的に隠す</label>
+    </div>
+    <div class="row" id="distance-row">
+      <label class="small" for="label-distance">表示距離 <span id="label-distance-value" class="slider-value">-</span></label>
+      <input type="range" id="label-distance" min="1" max="100" step="1" value="40">
+    </div>
+  </div>
+
+  <div id="status">GLBファイルとCSVファイルを読み込んで開始してください。</div>
+</aside>
+
+<div id="viewport-wrap">
+  <canvas id="viewport"></canvas>
+  <div id="labels"></div>
+  <div id="dropzone-hint">GLBファイルをここにドラッグ&ドロップ</div>
+
+  <div id="legend">
+    <div class="legend-title" id="legend-title"></div>
+    <div id="legend-numeric">
+      <div id="legend-bar"></div>
+      <div id="legend-range"><span id="legend-min"></span><span id="legend-max"></span></div>
+    </div>
+    <div id="legend-cats"></div>
+  </div>
+
+  <div id="inspector">
+    <div class="insp-name" id="insp-name"></div>
+    <table id="insp-table"></table>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script>
+"use strict";
+
+/* ============================================================
+   Three.js シーンのセットアップ
+============================================================ */
+const canvas = document.getElementById("viewport");
+const wrap = document.getElementById("viewport-wrap");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x17191d);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1e7);
+camera.position.set(5, 5, 5);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+dirLight.position.set(3, 10, 5);
+scene.add(dirLight);
+const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.35);
+dirLight2.position.set(-5, -3, -4);
+scene.add(dirLight2);
+
+const grid = new THREE.GridHelper(20, 20, 0x33373f, 0x24272d);
+scene.add(grid);
+
+/* ---- 簡易オービットコントロール(回転・ズーム・パン) ---- */
+const orbit = {
+  target: new THREE.Vector3(0, 0, 0),
+  spherical: new THREE.Spherical(10, Math.PI / 3, Math.PI / 4),
+  update() {
+    const p = new THREE.Vector3().setFromSpherical(this.spherical).add(this.target);
+    camera.position.copy(p);
+    camera.lookAt(this.target);
+  },
+};
+orbit.update();
+
+let dragMode = null; // "rotate" | "pan"
+let lastX = 0, lastY = 0;
+
+canvas.addEventListener("pointerdown", (e) => {
+  dragMode = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
+  lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!dragMode) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  if (dragMode === "rotate") {
+    orbit.spherical.theta -= dx * 0.006;
+    orbit.spherical.phi = Math.min(Math.PI - 0.05, Math.max(0.05, orbit.spherical.phi - dy * 0.006));
+  } else {
+    const panScale = orbit.spherical.radius * 0.0012;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+    orbit.target.addScaledVector(right, -dx * panScale);
+    orbit.target.addScaledVector(up, dy * panScale);
+  }
+  orbit.update();
+});
+canvas.addEventListener("pointerup", () => { dragMode = null; });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  orbit.spherical.radius *= (e.deltaY > 0 ? 1.1 : 0.9);
+  orbit.spherical.radius = Math.max(0.01, orbit.spherical.radius);
+  orbit.update();
+}, { passive: false });
+
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+  updateLabels();
+}
+// 注意: animate()の開始はスクリプトの最後で行う(全ての変数宣言が終わってから)
+
+/* ============================================================
+   状態
+============================================================ */
+let modelRoot = null;            // 読み込んだGLBのルート
+let meshes = [];                 // {mesh, matchName} の配列
+let csvRows = [];                // CSVの行(オブジェクトの配列)
+let csvColumns = [];             // 列名
+let originalMaterials = new Map(); // mesh.uuid -> 元マテリアル
+let labelEntries = [];           // ラベル { el, worldPos } の配列(定義はラベルセクション)
+let modelSize = 10;              // モデル全体のサイズ(距離カリングの基準に使う)
+const statusEl = document.getElementById("status");
+
+function setStatus(text, warn = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle("warn", warn);
+}
+
+/* ============================================================
+   ID正規化(Blenderアドオン版と同じロジック)
+============================================================ */
+function normalizeId(raw) {
+  const s = String(raw ?? "").trim();
+  const n = Number(s);
+  if (s !== "" && Number.isFinite(n)) return String(Math.trunc(n) === n ? Math.trunc(n) : n);
+  return s;
+}
+
+/* ============================================================
+   GLB読み込み(自前の軽量GLBパーサー)
+   - GLB(バイナリglTF 2.0)のヘッダー/JSONチャンク/BINチャンクを直接解析
+   - ノード名・階層・トランスフォームを保持してメッシュを構築する
+============================================================ */
+
+const COMPONENT_TYPES = {
+  5120: Int8Array, 5121: Uint8Array, 5122: Int16Array,
+  5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array,
+};
+const TYPE_SIZES = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+
+function parseGLB(arrayBuffer) {
+  const dv = new DataView(arrayBuffer);
+  if (dv.getUint32(0, true) !== 0x46546c67) throw new Error("GLB形式ではありません(マジックナンバー不一致)");
+  const version = dv.getUint32(4, true);
+  if (version !== 2) throw new Error(`glTFバージョン${version}は未対応です(2のみ対応)`);
+
+  let offset = 12;
+  let json = null, bin = null;
+  while (offset < dv.byteLength) {
+    const chunkLen = dv.getUint32(offset, true);
+    const chunkType = dv.getUint32(offset + 4, true);
+    const chunkStart = offset + 8;
+    if (chunkType === 0x4e4f534a) { // JSON
+      json = JSON.parse(new TextDecoder().decode(new Uint8Array(arrayBuffer, chunkStart, chunkLen)));
+    } else if (chunkType === 0x004e4942) { // BIN
+      bin = arrayBuffer.slice(chunkStart, chunkStart + chunkLen);
+    }
+    offset = chunkStart + chunkLen;
+  }
+  if (!json) throw new Error("JSONチャンクが見つかりません");
+  return { json, bin };
+}
+
+function readAccessor(json, bin, accessorIndex) {
+  const accessor = json.accessors[accessorIndex];
+  const bufferView = json.bufferViews[accessor.bufferView];
+  const CompType = COMPONENT_TYPES[accessor.componentType];
+  const numComponents = TYPE_SIZES[accessor.type];
+  const elementBytes = CompType.BYTES_PER_ELEMENT * numComponents;
+  const stride = bufferView.byteStride || elementBytes;
+  const baseOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+
+  const out = new CompType(accessor.count * numComponents);
+  if (stride === elementBytes) {
+    // 密に詰まっている場合はまとめてコピー
+    out.set(new CompType(bin, baseOffset, accessor.count * numComponents));
+  } else {
+    // インターリーブされている場合は1要素ずつ取り出す
+    const dv = new DataView(bin);
+    const readers = {
+      5120: (o) => dv.getInt8(o), 5121: (o) => dv.getUint8(o),
+      5122: (o) => dv.getInt16(o, true), 5123: (o) => dv.getUint16(o, true),
+      5125: (o) => dv.getUint32(o, true), 5126: (o) => dv.getFloat32(o, true),
+    };
+    const read = readers[accessor.componentType];
+    for (let i = 0; i < accessor.count; i++) {
+      for (let c = 0; c < numComponents; c++) {
+        out[i * numComponents + c] = read(baseOffset + i * stride + c * CompType.BYTES_PER_ELEMENT);
+      }
+    }
+  }
+  return out;
+}
+
+function buildSceneFromGLTF(json, bin) {
+  const root = new THREE.Group();
+  root.name = json.scenes?.[json.scene ?? 0]?.name || "glTF_Scene";
+
+  const defaultMat = () => new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide });
+
+  function buildMeshObjects(meshIndex, nodeName) {
+    const meshDef = json.meshes[meshIndex];
+    const group = new THREE.Group();
+    group.name = nodeName || meshDef.name || `mesh_${meshIndex}`;
+    for (const prim of meshDef.primitives) {
+      if (prim.mode !== undefined && prim.mode !== 4) continue; // TRIANGLESのみ対応
+      const geometry = new THREE.BufferGeometry();
+      const pos = readAccessor(json, bin, prim.attributes.POSITION);
+      geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      if (prim.attributes.NORMAL !== undefined) {
+        geometry.setAttribute("normal", new THREE.BufferAttribute(readAccessor(json, bin, prim.attributes.NORMAL), 3));
+      }
+      if (prim.indices !== undefined) {
+        geometry.setIndex(new THREE.BufferAttribute(readAccessor(json, bin, prim.indices), 1));
+      }
+      if (prim.attributes.NORMAL === undefined) geometry.computeVertexNormals();
+      const mesh = new THREE.Mesh(geometry, defaultMat());
+      mesh.name = group.name;
+      group.add(mesh);
+    }
+    return group;
+  }
+
+  function buildNode(nodeIndex) {
+    const nodeDef = json.nodes[nodeIndex];
+    let obj;
+    if (nodeDef.mesh !== undefined) {
+      obj = buildMeshObjects(nodeDef.mesh, nodeDef.name);
+    } else {
+      obj = new THREE.Group();
+      obj.name = nodeDef.name || `node_${nodeIndex}`;
+    }
+    if (nodeDef.matrix) {
+      const m = new THREE.Matrix4().fromArray(nodeDef.matrix);
+      m.decompose(obj.position, obj.quaternion, obj.scale);
+    } else {
+      if (nodeDef.translation) obj.position.fromArray(nodeDef.translation);
+      if (nodeDef.rotation) obj.quaternion.fromArray(nodeDef.rotation);
+      if (nodeDef.scale) obj.scale.fromArray(nodeDef.scale);
+    }
+    if (nodeDef.children) {
+      for (const childIndex of nodeDef.children) obj.add(buildNode(childIndex));
+    }
+    return obj;
+  }
+
+  const sceneDef = json.scenes?.[json.scene ?? 0];
+  const rootNodes = sceneDef?.nodes || (json.nodes ? json.nodes.map((_, i) => i) : []);
+  // scenes.nodesが無い場合は、どのノードの子でもないノードをルートとみなす
+  if (!sceneDef?.nodes && json.nodes) {
+    const childSet = new Set();
+    json.nodes.forEach((n) => (n.children || []).forEach((c) => childSet.add(c)));
+    rootNodes.length = 0;
+    json.nodes.forEach((_, i) => { if (!childSet.has(i)) rootNodes.push(i); });
+  }
+  for (const nodeIndex of rootNodes) root.add(buildNode(nodeIndex));
+  return root;
+}
+
+function loadGLBFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const { json, bin } = parseGLB(reader.result);
+      if (!bin) throw new Error("BINチャンクが見つかりません(外部バッファ参照の.gltfは未対応です。.glb形式で書き出してください)");
+
+      if (modelRoot) scene.remove(modelRoot);
+      originalMaterials.clear();
+      modelRoot = buildSceneFromGLTF(json, bin);
+      scene.add(modelRoot);
+
+      // メッシュを収集。マッチ用の名前は自分→親の順で探す
+      meshes = [];
+      modelRoot.traverse((obj) => {
+        if (obj.isMesh) {
+          let matchName = obj.name;
+          if ((!matchName || /^mesh[\d_]*$/i.test(matchName)) && obj.parent && obj.parent.name) {
+            matchName = obj.parent.name;
+          }
+          meshes.push({ mesh: obj, matchName });
+          originalMaterials.set(obj.uuid, obj.material);
+        }
+      });
+
+      frameAll();
+      updateDistanceValueText();
+      document.getElementById("dropzone-hint").classList.add("hidden");
+      document.getElementById("glb-btn").classList.add("loaded");
+      document.getElementById("glb-btn").textContent = file.name;
+      setStatus(`GLBを読み込みました: ${meshes.length} メッシュ`);
+      updateApplyEnabled();
+    } catch (err) {
+      setStatus("GLBの読み込みに失敗しました: " + err.message, true);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function frameAll() {
+  if (!modelRoot) return;
+  const box = new THREE.Box3().setFromObject(modelRoot);
+  if (box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3()).length();
+  modelSize = size;
+  orbit.target.copy(center);
+  orbit.spherical.radius = size * 0.9 + 0.001;
+  orbit.update();
+  camera.near = size / 1000;
+  camera.far = size * 100;
+  camera.updateProjectionMatrix();
+  grid.position.y = box.min.y;
+}
+
+document.getElementById("glb-input").addEventListener("change", (e) => {
+  if (e.target.files[0]) loadGLBFile(e.target.files[0]);
+});
+
+/* ドラッグ&ドロップ */
+wrap.addEventListener("dragover", (e) => { e.preventDefault(); wrap.classList.add("dragover"); });
+wrap.addEventListener("dragleave", () => wrap.classList.remove("dragover"));
+wrap.addEventListener("drop", (e) => {
+  e.preventDefault();
+  wrap.classList.remove("dragover");
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".glb") || lower.endsWith(".gltf")) loadGLBFile(file);
+  else if (lower.endsWith(".csv")) loadCSVFile(file);
+  else setStatus("対応していないファイル形式です: " + file.name, true);
+});
+
+/* ============================================================
+   CSV読み込み
+============================================================ */
+function loadCSVFile(file) {
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: (result) => {
+      csvRows = result.data;
+      csvColumns = result.meta.fields || [];
+      if (csvColumns.length < 2) {
+        setStatus("CSVにはID列と属性列の少なくとも2列が必要です。", true);
+        return;
+      }
+      // ID列ドロップダウン
+      const idSel = document.getElementById("id-column");
+      idSel.innerHTML = "";
+      csvColumns.forEach((c) => {
+        const o = document.createElement("option");
+        o.value = c; o.textContent = c;
+        idSel.appendChild(o);
+      });
+      idSel.disabled = false;
+      // "id" に近い列名があれば初期選択
+      const guess = csvColumns.find((c) => c.trim().toLowerCase() === "id");
+      if (guess) idSel.value = guess;
+
+      refreshAttributeOptions();
+      refreshLabelContentOptions();
+      document.getElementById("csv-btn").classList.add("loaded");
+      document.getElementById("csv-btn").textContent = file.name;
+      setStatus(`CSVを読み込みました: ${csvRows.length} 行 / 列: ${csvColumns.join(", ")}`);
+      updateApplyEnabled();
+    },
+    error: (err) => setStatus("CSVの読み込みに失敗しました: " + err.message, true),
+  });
+}
+
+function refreshAttributeOptions() {
+  const idCol = document.getElementById("id-column").value;
+  const attrSel = document.getElementById("attribute");
+  attrSel.innerHTML = "";
+  csvColumns.filter((c) => c !== idCol).forEach((c) => {
+    const o = document.createElement("option");
+    o.value = c; o.textContent = c;
+    attrSel.appendChild(o);
+  });
+  attrSel.disabled = attrSel.options.length === 0;
+}
+
+document.getElementById("csv-input").addEventListener("change", (e) => {
+  if (e.target.files[0]) loadCSVFile(e.target.files[0]);
+});
+document.getElementById("id-column").addEventListener("change", refreshAttributeOptions);
+
+function updateApplyEnabled() {
+  const ok = meshes.length > 0 && csvRows.length > 0;
+  document.getElementById("apply-btn").disabled = !ok;
+}
+
+/* ============================================================
+   色計算(Blenderアドオン版と同じロジック)
+============================================================ */
+function isNumericColumn(rows, col) {
+  for (const row of rows) {
+    const v = (row[col] ?? "").toString().trim();
+    if (v === "") continue;
+    if (!Number.isFinite(Number(v))) return false;
+  }
+  return true;
+}
+
+function hsvToRgb(h, s, v) {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  const m = i % 6;
+  const r = [v, q, p, p, t, v][m], g = [t, v, v, q, p, p][m], b = [p, p, t, v, v, q][m];
+  return [r, g, b];
+}
+
+function hexToRgb01(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
+function lerpColor(a, b, t) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+const HUE_RANGES = { BLUE_RED: [0.66, 0.0], GREEN_RED: [0.33, 0.0], BLUE_YELLOW: [0.66, 0.16] };
+
+function numericToColor(value, vmin, vmax, preset, cLow, cHigh, useMid, cMid) {
+  let t = vmax === vmin ? 0.5 : Math.max(0, Math.min(1, (value - vmin) / (vmax - vmin)));
+  if (preset === "CUSTOM") {
+    if (useMid) {
+      return t <= 0.5 ? lerpColor(cLow, cMid, t / 0.5) : lerpColor(cMid, cHigh, (t - 0.5) / 0.5);
+    }
+    return lerpColor(cLow, cHigh, t);
+  }
+  if (preset === "GRAYSCALE") return [t, t, t];
+  const [h0, h1] = HUE_RANGES[preset] || HUE_RANGES.BLUE_RED;
+  return hsvToRgb(h0 + (h1 - h0) * t, 0.85, 0.95);
+}
+
+const PALETTE = [
+  [0.90, 0.20, 0.20], [0.20, 0.55, 0.90], [0.25, 0.75, 0.35], [0.95, 0.65, 0.15],
+  [0.60, 0.30, 0.80], [0.20, 0.80, 0.80], [0.85, 0.85, 0.20], [0.55, 0.55, 0.55],
+];
+let categoryColorCache = {};
+function textToColor(category) {
+  if (!(category in categoryColorCache)) {
+    categoryColorCache[category] = PALETTE[Object.keys(categoryColorCache).length % PALETTE.length];
+  }
+  return categoryColorCache[category];
+}
+
+/* ============================================================
+   色分けの実行
+============================================================ */
+let attributesByMesh = new Map(); // mesh.uuid -> CSV行(インスペクタ用)
+
+document.getElementById("apply-btn").addEventListener("click", () => {
+  const idCol = document.getElementById("id-column").value;
+  const attr = document.getElementById("attribute").value;
+  const prefix = document.getElementById("id-prefix").value;
+  const preset = document.getElementById("preset").value;
+  const cLow = hexToRgb01(document.getElementById("color-low").value);
+  const cHigh = hexToRgb01(document.getElementById("color-high").value);
+  const cMid = hexToRgb01(document.getElementById("color-mid").value);
+  const useMid = document.getElementById("use-mid").checked;
+
+  // CSVをIDで引けるようにする
+  const dataById = new Map();
+  for (const row of csvRows) dataById.set(normalizeId(row[idCol]), row);
+
+  const numericMode = isNumericColumn(csvRows, attr);
+  let vmin = Infinity, vmax = -Infinity;
+  if (numericMode) {
+    for (const row of csvRows) {
+      const v = (row[attr] ?? "").toString().trim();
+      if (v === "") continue;
+      const n = Number(v);
+      vmin = Math.min(vmin, n); vmax = Math.max(vmax, n);
+    }
+  }
+
+  categoryColorCache = {};
+  attributesByMesh.clear();
+  let matched = 0;
+  const unmatched = [];
+
+  for (const { mesh, matchName } of meshes) {
+    let id = matchName || "";
+    if (prefix && id.startsWith(prefix)) id = id.slice(prefix.length);
+    id = normalizeId(id);
+    const row = dataById.get(id);
+    if (!row) { unmatched.push(matchName); continue; }
+
+    attributesByMesh.set(mesh.uuid, row);
+
+    const raw = (row[attr] ?? "").toString();
+    let rgb;
+    if (numericMode && raw.trim() !== "" && Number.isFinite(vmin)) {
+      rgb = numericToColor(Number(raw), vmin, vmax, preset, cLow, cHigh, useMid, cMid);
+    } else if (numericMode) {
+      rgb = [0.5, 0.5, 0.5];
+    } else {
+      rgb = textToColor(raw);
+    }
+    mesh.material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(rgb[0], rgb[1], rgb[2]),
+      roughness: 0.85, metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+    matched++;
+  }
+
+  updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid);
+  rebuildLabels();
+  document.getElementById("reset-btn").disabled = false;
+
+  let msg = `完了: ${matched} 個に反映 (対象属性: ${attr}, ${numericMode ? "数値" : "テキスト"})`;
+  if (unmatched.length) msg += `\n未マッチ: ${unmatched.length} 個 (例: ${unmatched.slice(0, 5).join(", ")})`;
+  setStatus(msg, unmatched.length > 0);
+});
+
+/* 色のリセット */
+document.getElementById("reset-btn").addEventListener("click", () => {
+  for (const { mesh } of meshes) {
+    const orig = originalMaterials.get(mesh.uuid);
+    if (orig) mesh.material = orig;
+  }
+  document.getElementById("legend").style.display = "none";
+  document.getElementById("inspector").style.display = "none";
+  showLabelsCheckbox.checked = false;
+  rebuildLabels();
+  setStatus("色を元に戻しました。");
+});
+
+/* ============================================================
+   凡例
+============================================================ */
+function rgbToCss(rgb) {
+  return `rgb(${Math.round(rgb[0] * 255)},${Math.round(rgb[1] * 255)},${Math.round(rgb[2] * 255)})`;
+}
+
+function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid) {
+  const legend = document.getElementById("legend");
+  const numDiv = document.getElementById("legend-numeric");
+  const catDiv = document.getElementById("legend-cats");
+  document.getElementById("legend-title").textContent = attr;
+  legend.style.display = "block";
+
+  if (numericMode) {
+    numDiv.style.display = "block";
+    catDiv.style.display = "none";
+    const stops = [];
+    for (let i = 0; i <= 10; i++) {
+      const rgb = numericToColor(vmin + (vmax - vmin) * (i / 10), vmin, vmax, preset, cLow, cHigh, useMid, cMid);
+      stops.push(`${rgbToCss(rgb)} ${i * 10}%`);
+    }
+    document.getElementById("legend-bar").style.background = `linear-gradient(to right, ${stops.join(",")})`;
+    document.getElementById("legend-min").textContent = Number(vmin.toPrecision(5));
+    document.getElementById("legend-max").textContent = Number(vmax.toPrecision(5));
+  } else {
+    numDiv.style.display = "none";
+    catDiv.style.display = "flex";
+    catDiv.innerHTML = "";
+    for (const [cat, rgb] of Object.entries(categoryColorCache)) {
+      const item = document.createElement("div");
+      item.className = "cat-item";
+      const sw = document.createElement("span");
+      sw.className = "cat-swatch";
+      sw.style.background = rgbToCss(rgb);
+      const label = document.createElement("span");
+      label.textContent = cat || "(空欄)";
+      item.appendChild(sw); item.appendChild(label);
+      catDiv.appendChild(item);
+    }
+  }
+}
+
+/* ============================================================
+   クリックで属性を表示(インスペクタ)
+============================================================ */
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let downPos = null;
+
+canvas.addEventListener("pointerdown", (e) => { downPos = [e.clientX, e.clientY]; });
+canvas.addEventListener("pointerup", (e) => {
+  // ドラッグ(カメラ操作)とクリックを区別する
+  if (!downPos) return;
+  const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]);
+  downPos = null;
+  if (moved > 4 || meshes.length === 0) return;
+
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(meshes.map((m) => m.mesh), false);
+
+  const inspector = document.getElementById("inspector");
+  if (!hits.length) { inspector.style.display = "none"; return; }
+
+  const mesh = hits[0].object;
+  const entry = meshes.find((m) => m.mesh === mesh);
+  document.getElementById("insp-name").textContent = entry ? entry.matchName : mesh.name;
+
+  const table = document.getElementById("insp-table");
+  table.innerHTML = "";
+  const row = attributesByMesh.get(mesh.uuid);
+  if (row) {
+    for (const [k, v] of Object.entries(row)) {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td"); td1.textContent = k;
+      const td2 = document.createElement("td"); td2.textContent = v;
+      tr.appendChild(td1); tr.appendChild(td2);
+      table.appendChild(tr);
+    }
+  } else {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 2;
+    td.textContent = "(CSV属性は未割り当て)";
+    tr.appendChild(td);
+    table.appendChild(tr);
+  }
+  inspector.style.display = "block";
+});
+
+/* ============================================================
+   オブジェクトラベル(位置に合わせて属性値を常時表示)
+============================================================ */
+const labelsContainer = document.getElementById("labels");
+const showLabelsCheckbox = document.getElementById("show-labels");
+const labelContentList = document.getElementById("label-content-list");
+
+const _projVec = new THREE.Vector3();
+
+function getSelectedLabelKeys() {
+  return [...labelContentList.querySelectorAll("input:checked")].map((c) => c.value);
+}
+
+function formatValue(v) {
+  const n = Number(v);
+  return (String(v).trim() !== "" && Number.isFinite(n)) ? String(Number(n.toPrecision(5))) : String(v);
+}
+
+function rebuildLabels() {
+  labelsContainer.innerHTML = "";
+  labelEntries = [];
+  if (!showLabelsCheckbox.checked || meshes.length === 0) return;
+
+  const keys = getSelectedLabelKeys();
+  if (keys.length === 0) return;
+  const multi = keys.length > 1;
+
+  const box = new THREE.Box3();
+  const center = new THREE.Vector3();
+
+  for (const { mesh, matchName } of meshes) {
+    const row = attributesByMesh.get(mesh.uuid);
+    const lines = [];
+
+    for (const key of keys) {
+      if (key === "__id__") {
+        lines.push({ key: "ID", value: matchName });
+      } else {
+        if (!row) continue;
+        const v = row[key];
+        if (v === undefined || v === null || String(v).trim() === "") continue;
+        lines.push({ key, value: formatValue(v) });
+      }
+    }
+    if (lines.length === 0) continue;
+
+    box.setFromObject(mesh);
+    if (box.isEmpty()) continue;
+    box.getCenter(center);
+
+    const el = document.createElement("div");
+    el.className = "obj-label";
+    // 複数選択時は「列名: 値」の形式、単一選択時は値のみ表示
+    for (const line of lines) {
+      const div = document.createElement("div");
+      if (multi) {
+        const keySpan = document.createElement("span");
+        keySpan.className = "lkey";
+        keySpan.textContent = line.key + ": ";
+        div.appendChild(keySpan);
+      }
+      div.appendChild(document.createTextNode(line.value));
+      el.appendChild(div);
+    }
+    labelsContainer.appendChild(el);
+    labelEntries.push({ el, worldPos: center.clone() });
+  }
+}
+
+function updateLabels() {
+  if (labelEntries.length === 0) return;
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+
+  // 距離カリング: スライダー値(1-100)をモデルサイズ基準の実距離に変換
+  // スライダー最大(100)でモデルサイズの4倍 = 実質無制限に近い
+  const cullEnabled = distanceCullCheckbox.checked;
+  const sliderVal = Number(labelDistanceSlider.value);
+  const maxDist = modelSize * 4 * (sliderVal / 100);
+  const maxDistSq = maxDist * maxDist;
+  const camPos = camera.position;
+
+  for (const { el, worldPos } of labelEntries) {
+    if (cullEnabled && camPos.distanceToSquared(worldPos) > maxDistSq) {
+      el.style.display = "none";
+      continue;
+    }
+    _projVec.copy(worldPos).project(camera);
+    // カメラの後ろ、または画面外は非表示
+    if (_projVec.z > 1 || _projVec.x < -1.05 || _projVec.x > 1.05 || _projVec.y < -1.05 || _projVec.y > 1.05) {
+      el.style.display = "none";
+      continue;
+    }
+    el.style.display = "block";
+    el.style.left = ((_projVec.x + 1) / 2 * w) + "px";
+    el.style.top = ((-_projVec.y + 1) / 2 * h) + "px";
+  }
+}
+
+function refreshLabelContentOptions() {
+  const idCol = document.getElementById("id-column").value;
+  // 現在のチェック状態を保持
+  const checked = new Set(getSelectedLabelKeys());
+
+  labelContentList.innerHTML = "";
+  const makeItem = (value, text) => {
+    const label = document.createElement("label");
+    label.className = "checkbox-row";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = value;
+    input.checked = checked.has(value) || (value === "__id__" && checked.size === 0);
+    input.addEventListener("change", rebuildLabels);
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(" " + text));
+    labelContentList.appendChild(label);
+  };
+
+  makeItem("__id__", "ID(オブジェクト名)");
+  csvColumns.filter((c) => c !== idCol).forEach((c) => makeItem(c, c));
+}
+
+showLabelsCheckbox.addEventListener("change", rebuildLabels);
+// 初期状態のIDチェックボックスにもイベントを付ける
+labelContentList.querySelector("input")?.addEventListener("change", rebuildLabels);
+
+/* ---- 文字サイズと表示距離の設定 ---- */
+const labelSizeSlider = document.getElementById("label-size");
+const labelSizeValue = document.getElementById("label-size-value");
+const distanceCullCheckbox = document.getElementById("distance-cull");
+const labelDistanceSlider = document.getElementById("label-distance");
+const labelDistanceValue = document.getElementById("label-distance-value");
+const distanceRow = document.getElementById("distance-row");
+
+labelSizeSlider.addEventListener("input", () => {
+  labelsContainer.style.setProperty("--label-size", labelSizeSlider.value + "px");
+  labelSizeValue.textContent = labelSizeSlider.value + "px";
+});
+
+function updateDistanceValueText() {
+  const dist = modelSize * 4 * (Number(labelDistanceSlider.value) / 100);
+  labelDistanceValue.textContent = Number(dist.toPrecision(3)) + " 単位";
+}
+labelDistanceSlider.addEventListener("input", updateDistanceValueText);
+distanceCullCheckbox.addEventListener("change", () => {
+  distanceRow.style.opacity = distanceCullCheckbox.checked ? "1" : "0.4";
+  labelDistanceSlider.disabled = !distanceCullCheckbox.checked;
+});
+
+/* ============================================================
+   UIの表示切り替え
+============================================================ */
+document.getElementById("preset").addEventListener("change", (e) => {
+  document.getElementById("custom-colors").style.display =
+    e.target.value === "CUSTOM" ? "block" : "none";
+});
+document.getElementById("use-mid").addEventListener("change", (e) => {
+  document.getElementById("color-mid").style.display = e.target.checked ? "block" : "none";
+});
+
+/* ============================================================
+   起動: 全ての宣言が終わったここでレンダリングループを開始する
+============================================================ */
+animate();
+
+</script>
+</body>
+</html>
