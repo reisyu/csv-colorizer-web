@@ -739,8 +739,8 @@ wrap.addEventListener("drop", (e) => {
 /* ============================================================
    CSV読み込み
 ============================================================ */
-function loadCSVFile(file) {
-  Papa.parse(file, {
+function loadCSVText(text, displayName) {
+  Papa.parse(text, {
     header: true,
     skipEmptyLines: true,
     complete: (result) => {
@@ -766,12 +766,18 @@ function loadCSVFile(file) {
       refreshAttributeOptions();
       refreshLabelContentOptions();
       document.getElementById("csv-btn").classList.add("loaded");
-      document.getElementById("csv-btn").textContent = file.name;
+      document.getElementById("csv-btn").textContent = displayName;
       setStatus(`CSVを読み込みました: ${csvRows.length} 行 / 列: ${csvColumns.join(", ")}`);
       updateApplyEnabled();
     },
     error: (err) => setStatus("CSVの読み込みに失敗しました: " + err.message, true),
   });
+}
+
+function loadCSVFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => loadCSVText(reader.result, file.name);
+  reader.readAsText(file);
 }
 
 function refreshAttributeOptions() {
@@ -1189,9 +1195,94 @@ document.getElementById("use-mid").addEventListener("change", (e) => {
 });
 
 /* ============================================================
+   サンプルデータ(初期表示用)
+   - 石垣のような不整形パネルをその場で生成し、面積等をCSV化する
+============================================================ */
+function loadSampleData() {
+  // --- 乱数(シード固定で毎回同じサンプルになるようにする) ---
+  let seed = 42;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+
+  const group = new THREE.Group();
+  group.name = "SampleWall";
+  const rows = 6, cols = 8;
+  const cell = 1.0;
+  const csvLines = ["ID,Area,Width,Height"];
+  let id = 1;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      // セルの中に、頂点をジッターさせた不整形の凸多角形を作る
+      const cx = c * cell, cy = r * cell;
+      const nVerts = 5 + Math.floor(rand() * 3); // 5〜7角形
+      const pts = [];
+      for (let i = 0; i < nVerts; i++) {
+        const angle = (i / nVerts) * Math.PI * 2 + rand() * 0.35;
+        const radius = cell * (0.32 + rand() * 0.14);
+        pts.push(new THREE.Vector2(
+          cx + Math.cos(angle) * radius,
+          cy + Math.sin(angle) * radius * 0.85
+        ));
+      }
+
+      const shape = new THREE.Shape(pts);
+      const geometry = new THREE.ShapeGeometry(shape);
+      const mesh = new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, side: THREE.DoubleSide })
+      );
+      mesh.name = String(id);
+      group.add(mesh);
+
+      // 属性計算: 面積(靴ひも公式)とバウンディングボックスの幅・高さ
+      let area = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
+        area += p1.x * p2.y - p2.x * p1.y;
+      }
+      area = Math.abs(area) / 2;
+      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+      const width = Math.max(...xs) - Math.min(...xs);
+      const height = Math.max(...ys) - Math.min(...ys);
+      csvLines.push(`${id},${area.toFixed(6)},${width.toFixed(4)},${height.toFixed(4)}`);
+      id++;
+    }
+  }
+
+  // --- モデルをシーンに設置 ---
+  if (modelRoot) scene.remove(modelRoot);
+  originalMaterials.clear();
+  modelRoot = group;
+  scene.add(modelRoot);
+  meshes = [];
+  modelRoot.traverse((obj) => {
+    if (obj.isMesh) {
+      meshes.push({ mesh: obj, matchName: obj.name });
+      originalMaterials.set(obj.uuid, obj.material);
+    }
+  });
+  frameAll();
+  updateDistanceValueText();
+  document.getElementById("dropzone-hint").classList.add("hidden");
+  document.getElementById("glb-btn").classList.add("loaded");
+  document.getElementById("glb-btn").textContent = "(内蔵サンプル) 48枚のパネル";
+
+  // --- CSVも読み込み、少し待ってから自動で色分けを実行 ---
+  loadCSVText(csvLines.join("\n"), "(内蔵サンプル) sample.csv");
+  setTimeout(() => {
+    document.getElementById("apply-btn").click();
+    setStatus("サンプルデータを表示中です。\n自分のGLB/CSVを読み込むと置き換わります。");
+  }, 100);
+}
+
+/* ============================================================
    起動: 全ての宣言が終わったここでレンダリングループを開始する
 ============================================================ */
 animate();
+loadSampleData();
 
 </script>
 </body>
