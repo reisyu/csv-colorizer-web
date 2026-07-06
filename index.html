@@ -307,12 +307,15 @@
   <h1>CSV Attribute Colorizer</h1>
   <div class="subtitle">GLBジオメトリをCSV属性で色分け表示</div>
 
-  <!-- STEP 1: GLB -->
+  <!-- STEP 1: モデル -->
   <div class="step">
-    <div class="step-label">1. GLBを読み込む</div>
+    <div class="step-label">1. モデルを読み込む</div>
     <div class="row">
-      <label class="filebtn" id="glb-btn" for="glb-input">クリックして .glb / .gltf を選択<br>(ビューポートへのドロップも可)</label>
-      <input type="file" id="glb-input" accept=".glb,.gltf">
+      <label class="filebtn" id="glb-btn" for="glb-input">クリックして .glb / .dxf を選択<br>(ビューポートへのドロップも可)</label>
+      <input type="file" id="glb-input" accept=".glb,.gltf,.dxf">
+    </div>
+    <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
+      DXF(閉じた3Dポリライン)の場合、幅・高さ・面積・矩形充填率を自動計算します
     </div>
   </div>
 
@@ -330,6 +333,9 @@
     <div class="row">
       <label class="small" for="id-prefix">オブジェクト名の接頭辞(あれば)</label>
       <input type="text" id="id-prefix" placeholder="例: Cell_">
+    </div>
+    <div class="row">
+      <button class="ghost" id="download-csv-btn" disabled style="margin-top:0">現在の属性をCSVで保存</button>
     </div>
   </div>
 
@@ -719,7 +725,276 @@ function frameAll() {
 }
 
 document.getElementById("glb-input").addEventListener("change", (e) => {
-  if (e.target.files[0]) loadGLBFile(e.target.files[0]);
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.name.toLowerCase().endsWith(".dxf")) loadDXFFile(file);
+  else loadGLBFile(file);
+  e.target.value = ""; // 同じファイルの再読み込みを可能にする
+});
+
+/* ============================================================
+   DXF読み込み + 幾何属性の自動計算
+   - 閉じた3Dポリライン(POLYLINE/VERTEX)のみを対象にパース
+   - レイヤー名の末尾の数字をIDとして使う(例: Layer123 -> 123)
+   - 平面直角座標系などの大きな座標は自動で原点シフトする
+   - 各輪郭について以下を自動計算する:
+       Width / Height : 最小外接矩形の2辺(水平に近い軸の方をWidthとする)
+       Area           : フィット平面に投影した輪郭の面積
+       FillRate       : 矩形充填率 = Area / (Width * Height)
+============================================================ */
+
+function parseDXF(text) {
+  const lines = text.split(/\r?\n/);
+  const polylines = [];
+  let current = null;
+  let x = 0, y = 0;
+
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    const code = lines[i].trim();
+    const value = lines[i + 1].trim();
+    if (code === "0") {
+      if (value === "POLYLINE") {
+        current = { layer: "", verts: [] };
+      } else if (value === "SEQEND") {
+        if (current && current.verts.length >= 3) polylines.push(current);
+        current = null;
+      }
+    } else if (current) {
+      if (code === "8" && current.verts.length === 0) current.layer = value;
+      else if (code === "10") x = parseFloat(value);
+      else if (code === "20") y = parseFloat(value);
+      else if (code === "30") current.verts.push([x, y, parseFloat(value)]);
+    }
+  }
+  return polylines;
+}
+
+/* Newell法: 閉じたほぼ平面のポリゴンの法線を安定的に求める */
+function newellNormal(verts) {
+  let nx = 0, ny = 0, nz = 0;
+  for (let i = 0; i < verts.length; i++) {
+    const p = verts[i], q = verts[(i + 1) % verts.length];
+    nx += (p[1] - q[1]) * (p[2] + q[2]);
+    ny += (p[2] - q[2]) * (p[0] + q[0]);
+    nz += (p[0] - q[0]) * (p[1] + q[1]);
+  }
+  const len = Math.hypot(nx, ny, nz) || 1;
+  return [nx / len, ny / len, nz / len];
+}
+
+/* 2D凸包(Andrew's monotone chain) */
+function convexHull2D(points) {
+  const pts = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (pts.length <= 2) return pts;
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+/* 回転キャリパー法: 凸包の辺ごとに外接矩形を試し、面積最小のものを厳密に求める */
+function minAreaRect2D(hull) {
+  let best = null, minArea = Infinity;
+  const n = hull.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = hull[i], p2 = hull[(i + 1) % n];
+    const ex = p2[0] - p1[0], ey = p2[1] - p1[1];
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-12) continue;
+    const ux = ex / len, uy = ey / len;   // 辺方向
+    const vx = -uy, vy = ux;              // 垂直方向
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (const [px, py] of hull) {
+      const pu = px * ux + py * uy, pv = px * vx + py * vy;
+      if (pu < minU) minU = pu; if (pu > maxU) maxU = pu;
+      if (pv < minV) minV = pv; if (pv > maxV) maxV = pv;
+    }
+    const w = maxU - minU, h = maxV - minV, area = w * h;
+    if (area < minArea) {
+      minArea = area;
+      best = { w, h, axisU: [ux, uy], axisV: [vx, vy] };
+    }
+  }
+  return best;
+}
+
+/* 1つの輪郭(3D頂点列)から幾何属性を計算する */
+function computeContourAttributes(verts) {
+  // フィット平面の基底(法線 + 面内の直交2軸)
+  const normal = newellNormal(verts);
+  let ref = Math.abs(normal[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const dot = ref[0] * normal[0] + ref[1] * normal[1] + ref[2] * normal[2];
+  let u = [ref[0] - normal[0] * dot, ref[1] - normal[1] * dot, ref[2] - normal[2] * dot];
+  const ulen = Math.hypot(...u) || 1;
+  u = [u[0] / ulen, u[1] / ulen, u[2] / ulen];
+  const v = [
+    normal[1] * u[2] - normal[2] * u[1],
+    normal[2] * u[0] - normal[0] * u[2],
+    normal[0] * u[1] - normal[1] * u[0],
+  ];
+
+  // 重心を原点として平面(u, v)に投影
+  const cx = verts.reduce((s, p) => s + p[0], 0) / verts.length;
+  const cy = verts.reduce((s, p) => s + p[1], 0) / verts.length;
+  const cz = verts.reduce((s, p) => s + p[2], 0) / verts.length;
+  const pts2d = verts.map((p) => {
+    const rx = p[0] - cx, ry = p[1] - cy, rz = p[2] - cz;
+    return [rx * u[0] + ry * u[1] + rz * u[2], rx * v[0] + ry * v[1] + rz * v[2]];
+  });
+
+  // 面積(靴ひも公式)
+  let area = 0;
+  for (let i = 0; i < pts2d.length; i++) {
+    const p = pts2d[i], q = pts2d[(i + 1) % pts2d.length];
+    area += p[0] * q[1] - q[0] * p[1];
+  }
+  area = Math.abs(area) / 2;
+
+  // 最小外接矩形
+  const hull = convexHull2D(pts2d);
+  const rect = minAreaRect2D(hull);
+  if (!rect) return null;
+
+  // 矩形の2軸を3Dに戻し、水平に近い方(Z成分が小さい方)をWidthとする
+  const axis1 = [
+    u[0] * rect.axisU[0] + v[0] * rect.axisU[1],
+    u[1] * rect.axisU[0] + v[1] * rect.axisU[1],
+    u[2] * rect.axisU[0] + v[2] * rect.axisU[1],
+  ];
+  const axis2 = [
+    u[0] * rect.axisV[0] + v[0] * rect.axisV[1],
+    u[1] * rect.axisV[0] + v[1] * rect.axisV[1],
+    u[2] * rect.axisV[0] + v[2] * rect.axisV[1],
+  ];
+  let width, height;
+  if (Math.abs(axis1[2]) <= Math.abs(axis2[2])) {
+    width = rect.w; height = rect.h;
+  } else {
+    width = rect.h; height = rect.w;
+  }
+
+  const fillRate = (rect.w * rect.h) > 0 ? area / (rect.w * rect.h) : 0;
+  return { width, height, area, fillRate, pts2d };
+}
+
+function loadDXFFile(file) {
+  setStatus("DXFを解析中...");
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const contours = parseDXF(reader.result);
+      if (contours.length === 0) {
+        setStatus("DXFから閉じたポリラインが見つかりませんでした。", true);
+        return;
+      }
+
+      // --- 原点シフト量を全頂点のバウンディングボックス中心から決める ---
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const c of contours) {
+        for (const [px, py, pz] of c.verts) {
+          if (px < minX) minX = px; if (px > maxX) maxX = px;
+          if (py < minY) minY = py; if (py > maxY) maxY = py;
+          if (pz < minZ) minZ = pz; if (pz > maxZ) maxZ = pz;
+        }
+      }
+      const ox = (minX + maxX) / 2, oy = (minY + maxY) / 2, oz = (minZ + maxZ) / 2;
+
+      // --- メッシュ生成 + 属性計算 ---
+      if (modelRoot) scene.remove(modelRoot);
+      originalMaterials.clear();
+      modelRoot = new THREE.Group();
+      modelRoot.name = "DXF";
+      meshes = [];
+      const csvLines = ["ID,Width,Height,Area,FillRate"];
+      let failed = 0;
+
+      for (const contour of contours) {
+        // レイヤー名の末尾の数字をIDにする(数字がなければレイヤー名そのまま)
+        const m = contour.layer.match(/(\d+)\s*$/);
+        const id = m ? m[1] : contour.layer;
+
+        const attrs = computeContourAttributes(contour.verts);
+        if (!attrs) { failed++; continue; }
+
+        // 三角形分割(投影した2D座標を使い、頂点は元の3D座標で構築)
+        const shapeVecs = attrs.pts2d.map((p) => new THREE.Vector2(p[0], p[1]));
+        let triangles;
+        try {
+          triangles = THREE.ShapeUtils.triangulateShape(shapeVecs, []);
+        } catch (e) { failed++; continue; }
+
+        const positions = new Float32Array(contour.verts.length * 3);
+        for (let i = 0; i < contour.verts.length; i++) {
+          positions[i * 3] = contour.verts[i][0] - ox;
+          // DXFはZ-up、Three.jsはY-upなので座標軸を入れ替える(Y<->Z)
+          positions[i * 3 + 1] = contour.verts[i][2] - oz;
+          positions[i * 3 + 2] = -(contour.verts[i][1] - oy);
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        geometry.setIndex(triangles.flat());
+        geometry.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(
+          geometry,
+          new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide })
+        );
+        mesh.name = id;
+        modelRoot.add(mesh);
+        meshes.push({ mesh, matchName: id });
+        originalMaterials.set(mesh.uuid, mesh.material);
+
+        csvLines.push(
+          `${id},${attrs.width.toFixed(4)},${attrs.height.toFixed(4)},` +
+          `${attrs.area.toFixed(6)},${attrs.fillRate.toFixed(4)}`
+        );
+      }
+
+      scene.add(modelRoot);
+      frameAll();
+      updateDistanceValueText();
+      document.getElementById("dropzone-hint").classList.add("hidden");
+      document.getElementById("glb-btn").classList.add("loaded");
+      document.getElementById("glb-btn").textContent = file.name;
+
+      // --- 計算した属性をCSVとして読み込み、自動で色分けまで実行 ---
+      loadCSVText(csvLines.join("\n"), "(自動計算) " + file.name.replace(/\.dxf$/i, "") + "_attributes.csv");
+      setTimeout(() => {
+        document.getElementById("apply-btn").click();
+        let msg = `DXFを読み込みました: ${meshes.length} 輪郭\n` +
+          `幅・高さ・面積・矩形充填率を自動計算しました。\n` +
+          `原点シフト量: (${ox.toFixed(1)}, ${oy.toFixed(1)}, ${oz.toFixed(1)})`;
+        if (failed > 0) msg += `\n計算できなかった輪郭: ${failed} 個`;
+        setStatus(msg, failed > 0);
+      }, 100);
+    } catch (err) {
+      setStatus("DXFの読み込みに失敗しました: " + err.message, true);
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ---- CSVダウンロード ---- */
+document.getElementById("download-csv-btn").addEventListener("click", () => {
+  if (csvRows.length === 0) return;
+  const header = csvColumns.join(",");
+  const body = csvRows.map((row) => csvColumns.map((c) => row[c] ?? "").join(",")).join("\n");
+  const blob = new Blob(["\uFEFF" + header + "\n" + body], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "attributes.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
 
 /* ドラッグ&ドロップ */
@@ -732,6 +1007,7 @@ wrap.addEventListener("drop", (e) => {
   if (!file) return;
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".glb") || lower.endsWith(".gltf")) loadGLBFile(file);
+  else if (lower.endsWith(".dxf")) loadDXFFile(file);
   else if (lower.endsWith(".csv")) loadCSVFile(file);
   else setStatus("対応していないファイル形式です: " + file.name, true);
 });
@@ -923,6 +1199,7 @@ document.getElementById("apply-btn").addEventListener("click", () => {
   updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid);
   rebuildLabels();
   document.getElementById("reset-btn").disabled = false;
+  document.getElementById("download-csv-btn").disabled = false;
 
   let msg = `完了: ${matched} 個に反映 (対象属性: ${attr}, ${numericMode ? "数値" : "テキスト"})`;
   if (unmatched.length) msg += `\n未マッチ: ${unmatched.length} 個 (例: ${unmatched.slice(0, 5).join(", ")})`;
