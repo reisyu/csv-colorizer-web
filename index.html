@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSV Attribute Colorizer — Web</title>
+<title>Geometry Attribute Colorizer — 3Dジオメトリの属性色分けビューアー</title>
 <style>
   :root {
     --bg: #17191d;
@@ -205,6 +205,44 @@
     pointer-events: none;
   }
 
+  /* ---------- プログレス表示 ---------- */
+  #progress-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(23, 25, 29, 0.75);
+    z-index: 10;
+  }
+  #progress-overlay.active { display: flex; }
+  #progress-box {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    padding: 20px 28px;
+    min-width: 280px;
+    text-align: center;
+  }
+  #progress-text {
+    font-size: 13px;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  #progress-track {
+    height: 8px;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.1s linear;
+  }
+
   /* ---------- 凡例 ---------- */
   #legend {
     position: absolute;
@@ -304,8 +342,8 @@
 <body>
 
 <aside id="sidebar">
-  <h1>CSV Attribute Colorizer</h1>
-  <div class="subtitle">GLBジオメトリをCSV属性で色分け表示</div>
+  <h1>Geometry Attribute Colorizer</h1>
+  <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー</div>
 
   <!-- STEP 1: モデル -->
   <div class="step">
@@ -315,13 +353,16 @@
       <input type="file" id="glb-input" accept=".glb,.gltf,.dxf">
     </div>
     <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
-      DXF(閉じた3Dポリライン)の場合、幅・高さ・面積・矩形充填率を自動計算します
+      DXF(閉じた3Dポリライン)は、幅・高さ・面積・矩形充填率・傾斜角・矩形回転角を自動計算します
     </div>
   </div>
 
-  <!-- STEP 2: CSV -->
+  <!-- STEP 2: 属性データ -->
   <div class="step">
-    <div class="step-label">2. CSVを読み込む</div>
+    <div class="step-label">2. 属性データ</div>
+    <div class="row" id="attr-source-state" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
+      DXFを読み込んだ場合は自動計算されるため、CSVの読み込みは不要です
+    </div>
     <div class="row">
       <label class="filebtn" id="csv-btn" for="csv-input">クリックして .csv を選択</label>
       <input type="file" id="csv-input" accept=".csv,text/csv">
@@ -334,9 +375,6 @@
       <label class="small" for="id-prefix">オブジェクト名の接頭辞(あれば)</label>
       <input type="text" id="id-prefix" placeholder="例: Cell_">
     </div>
-    <div class="row">
-      <button class="ghost" id="download-csv-btn" disabled style="margin-top:0">現在の属性をCSVで保存</button>
-    </div>
   </div>
 
   <!-- STEP 3: 色分け -->
@@ -344,7 +382,8 @@
     <div class="step-label">3. 色分けする</div>
     <div class="row">
       <label class="small" for="attribute">色分けする属性</label>
-      <select id="attribute" disabled><option>(CSVを読み込んでください)</option></select>
+      <select id="attribute" disabled><option>(属性データを読み込んでください)</option></select>
+      <div id="attr-description" style="font-size:11px;color:var(--ink-dim);margin-top:4px;line-height:1.5"></div>
     </div>
     <div class="row">
       <label class="small" for="preset">配色</label>
@@ -356,6 +395,9 @@
         <option value="CUSTOM">カスタム</option>
       </select>
     </div>
+    <div class="row">
+      <label class="checkbox-row"><input type="checkbox" id="invert-gradient"> グラデーションを反転</label>
+    </div>
     <div class="row" id="custom-colors" style="display:none">
       <div class="color-row">
         <input type="color" id="color-low" value="#1a4ce6" title="開始色(最小値)">
@@ -365,6 +407,22 @@
       <div style="margin-top:8px">
         <label class="checkbox-row"><input type="checkbox" id="use-mid"> 中間色を使う</label>
       </div>
+    </div>
+    <div class="row">
+      <label class="checkbox-row"><input type="checkbox" id="manual-range"> 範囲を手動で指定</label>
+    </div>
+    <div class="row" id="manual-range-inputs" style="display:none">
+      <div style="display:flex; gap:8px">
+        <div style="flex:1">
+          <label class="small" for="range-min">最小値</label>
+          <input type="text" id="range-min" placeholder="自動">
+        </div>
+        <div style="flex:1">
+          <label class="small" for="range-max">最大値</label>
+          <input type="text" id="range-max" placeholder="自動">
+        </div>
+      </div>
+      <button class="ghost" id="autofill-range-btn" style="margin-top:8px">データの最小・最大を入れる</button>
     </div>
     <div class="row">
       <button class="action" id="apply-btn" disabled>色分けを実行</button>
@@ -397,13 +455,34 @@
     </div>
   </div>
 
-  <div id="status">GLBファイルとCSVファイルを読み込んで開始してください。</div>
+  <!-- STEP 5: 書き出し -->
+  <div class="step">
+    <div class="step-label">5. 書き出し</div>
+    <div class="row">
+      <button class="ghost" id="download-csv-btn" disabled style="margin-top:0">属性をCSVで保存</button>
+    </div>
+    <div class="row">
+      <button class="ghost" id="export-glb-btn" disabled style="margin-top:0">ID付きGLBで保存</button>
+    </div>
+    <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
+      GLBはオブジェクト名(ID)を保持したまま書き出されます。Blender等で再利用できます
+    </div>
+  </div>
+
+  <div id="status">モデル(GLB / DXF)を読み込んで開始してください。</div>
 </aside>
 
 <div id="viewport-wrap">
   <canvas id="viewport"></canvas>
   <div id="labels"></div>
   <div id="dropzone-hint">GLBファイルをここにドラッグ&ドロップ</div>
+
+  <div id="progress-overlay">
+    <div id="progress-box">
+      <div id="progress-text">処理中...</div>
+      <div id="progress-track"><div id="progress-fill"></div></div>
+    </div>
+  </div>
 
   <div id="legend">
     <div class="legend-title" id="legend-title"></div>
@@ -526,6 +605,29 @@ const statusEl = document.getElementById("status");
 function setStatus(text, warn = false) {
   statusEl.textContent = text;
   statusEl.classList.toggle("warn", warn);
+}
+
+/* ============================================================
+   属性名の日本語併記と説明
+   (自動計算される属性 + よく使われる列名に対応。未知の列名はそのまま表示)
+============================================================ */
+const ATTR_INFO = {
+  Width:     { jp: "幅",       desc: "最小外接矩形の2辺のうち、水平に近い方の辺の長さ" },
+  Height:    { jp: "高さ",     desc: "最小外接矩形の2辺のうち、鉛直に近い方の辺の長さ" },
+  Area:      { jp: "面積",     desc: "フィット平面に投影した輪郭の面積" },
+  FillRate:  { jp: "矩形充填率", desc: "輪郭の面積 ÷ 外接矩形の面積(1に近いほど矩形に近い形)" },
+  Tilt:      { jp: "傾斜角",   desc: "面の法線と鉛直(+Z)のなす角。0°=水平な面、90°=垂直な面" },
+  RectAngle: { jp: "矩形回転角", desc: "外接矩形の水平辺が面内の水平基準から回転している角度。反時計回り(右上がり)がプラス" },
+};
+
+function attrLabel(col) {
+  const info = ATTR_INFO[col];
+  return info ? `${col}(${info.jp})` : col;
+}
+
+function attrDescription(col) {
+  const info = ATTR_INFO[col];
+  return info ? info.desc : "";
 }
 
 /* ============================================================
@@ -699,6 +801,7 @@ function loadGLBFile(file) {
       document.getElementById("dropzone-hint").classList.add("hidden");
       document.getElementById("glb-btn").classList.add("loaded");
       document.getElementById("glb-btn").textContent = file.name;
+      document.getElementById("export-glb-btn").disabled = false;
       setStatus(`GLBを読み込みました: ${meshes.length} メッシュ`);
       updateApplyEnabled();
     } catch (err) {
@@ -731,6 +834,26 @@ document.getElementById("glb-input").addEventListener("change", (e) => {
   else loadGLBFile(file);
   e.target.value = ""; // 同じファイルの再読み込みを可能にする
 });
+
+/* ============================================================
+   プログレス表示(大規模データの処理中にUIが固まらないように)
+============================================================ */
+const progressOverlay = document.getElementById("progress-overlay");
+const progressText = document.getElementById("progress-text");
+const progressFill = document.getElementById("progress-fill");
+
+function showProgress(text, ratio) {
+  progressOverlay.classList.add("active");
+  progressText.textContent = text;
+  progressFill.style.width = (ratio * 100).toFixed(1) + "%";
+}
+function hideProgress() {
+  progressOverlay.classList.remove("active");
+}
+/* チャンク処理の間にブラウザへ制御を返す */
+function nextFrame() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 /* ============================================================
    DXF読み込み + 幾何属性の自動計算
@@ -875,24 +998,68 @@ function computeContourAttributes(verts) {
     u[1] * rect.axisV[0] + v[1] * rect.axisV[1],
     u[2] * rect.axisV[0] + v[2] * rect.axisV[1],
   ];
-  let width, height;
+  let width, height, widthAxis;
   if (Math.abs(axis1[2]) <= Math.abs(axis2[2])) {
-    width = rect.w; height = rect.h;
+    width = rect.w; height = rect.h; widthAxis = axis1;
   } else {
-    width = rect.h; height = rect.w;
+    width = rect.h; height = rect.w; widthAxis = axis2;
   }
 
   const fillRate = (rect.w * rect.h) > 0 ? area / (rect.w * rect.h) : 0;
-  return { width, height, area, fillRate, pts2d };
+
+  // 法線と +Z ベクトルのなす角(傾斜角、度)を計算する
+  // 法線は Newell 法で符号が決まるため、上下どちらを向いていても
+  // 「面がどれだけ傾いているか」を表すよう 0〜90度に正規化する
+  let tilt = Math.acos(Math.min(1, Math.max(-1, Math.abs(normal[2])))) * 180 / Math.PI;
+
+  // 外接矩形の水平辺(widthAxis)が、面内での水平基準に対して
+  // 反時計回りに何度回転しているかを符号付きで求める(RectAngle)。
+  //   面内水平基準 h = 法線 × +Z を正規化したもの(面と水平面の交線 = 走向方向)
+  //   面内鉛直基準 vv = 法線 × h (面内で上向き)
+  //   widthAxis を (h, vv) 座標に射影し、atan2 で角度を出す
+  const nz = [0, 0, 1];
+  let h = [
+    normal[1] * nz[2] - normal[2] * nz[1],
+    normal[2] * nz[0] - normal[0] * nz[2],
+    normal[0] * nz[1] - normal[1] * nz[0],
+  ];
+  let hlen = Math.hypot(...h);
+  let rectAngle;
+  if (hlen < 1e-9) {
+    // 面がほぼ水平で「面内水平」が定義できない場合は角度0とする
+    rectAngle = 0;
+  } else {
+    h = [h[0] / hlen, h[1] / hlen, h[2] / hlen];
+    const vv = [
+      normal[1] * h[2] - normal[2] * h[1],
+      normal[2] * h[0] - normal[0] * h[2],
+      normal[0] * h[1] - normal[1] * h[0],
+    ];
+    // widthAxis は向きが2通りあるので、面内水平基準と同じ側(h方向成分が正)に揃える
+    let wa = widthAxis.slice();
+    const dotH = wa[0] * h[0] + wa[1] * h[1] + wa[2] * h[2];
+    if (dotH < 0) wa = [-wa[0], -wa[1], -wa[2]];
+    const compH = wa[0] * h[0] + wa[1] * h[1] + wa[2] * h[2];
+    const compV = wa[0] * vv[0] + wa[1] * vv[1] + wa[2] * vv[2];
+    // 反時計回り(面内上向き成分が正)をプラスにする
+    rectAngle = Math.atan2(compV, compH) * 180 / Math.PI;
+  }
+
+  return { width, height, area, fillRate, tilt, rectAngle, pts2d };
 }
 
 function loadDXFFile(file) {
   setStatus("DXFを解析中...");
+  showProgress("DXFを解析中...", 0);
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
+      // パース自体はテキスト走査1回なので同期でも比較的速いが、
+      // 直前にプログレスを描画させるため1フレーム待つ
+      await nextFrame();
       const contours = parseDXF(reader.result);
       if (contours.length === 0) {
+        hideProgress();
         setStatus("DXFから閉じたポリラインが見つかりませんでした。", true);
         return;
       }
@@ -909,66 +1076,79 @@ function loadDXFFile(file) {
       }
       const ox = (minX + maxX) / 2, oy = (minY + maxY) / 2, oz = (minZ + maxZ) / 2;
 
-      // --- メッシュ生成 + 属性計算 ---
+      // --- メッシュ生成 + 属性計算(チャンク分割でUIを固めない) ---
       if (modelRoot) scene.remove(modelRoot);
       originalMaterials.clear();
       modelRoot = new THREE.Group();
       modelRoot.name = "DXF";
       meshes = [];
-      const csvLines = ["ID,Width,Height,Area,FillRate"];
+      const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle"];
       let failed = 0;
 
-      for (const contour of contours) {
-        // レイヤー名の末尾の数字をIDにする(数字がなければレイヤー名そのまま)
-        const m = contour.layer.match(/(\d+)\s*$/);
-        const id = m ? m[1] : contour.layer;
+      const CHUNK = 200;
+      const total = contours.length;
+      const sharedMaterialParams = { color: 0xb8bcc4, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide };
 
-        const attrs = computeContourAttributes(contour.verts);
-        if (!attrs) { failed++; continue; }
+      for (let start = 0; start < total; start += CHUNK) {
+        const end = Math.min(start + CHUNK, total);
+        for (let ci = start; ci < end; ci++) {
+          const contour = contours[ci];
+          // レイヤー名の末尾の数字をIDにする(数字がなければレイヤー名そのまま)
+          const m = contour.layer.match(/(\d+)\s*$/);
+          const id = m ? m[1] : contour.layer;
 
-        // 三角形分割(投影した2D座標を使い、頂点は元の3D座標で構築)
-        const shapeVecs = attrs.pts2d.map((p) => new THREE.Vector2(p[0], p[1]));
-        let triangles;
-        try {
-          triangles = THREE.ShapeUtils.triangulateShape(shapeVecs, []);
-        } catch (e) { failed++; continue; }
+          const attrs = computeContourAttributes(contour.verts);
+          if (!attrs) { failed++; continue; }
 
-        const positions = new Float32Array(contour.verts.length * 3);
-        for (let i = 0; i < contour.verts.length; i++) {
-          positions[i * 3] = contour.verts[i][0] - ox;
-          // DXFはZ-up、Three.jsはY-upなので座標軸を入れ替える(Y<->Z)
-          positions[i * 3 + 1] = contour.verts[i][2] - oz;
-          positions[i * 3 + 2] = -(contour.verts[i][1] - oy);
+          // 三角形分割(投影した2D座標を使い、頂点は元の3D座標で構築)
+          const shapeVecs = attrs.pts2d.map((p) => new THREE.Vector2(p[0], p[1]));
+          let triangles;
+          try {
+            triangles = THREE.ShapeUtils.triangulateShape(shapeVecs, []);
+          } catch (e) { failed++; continue; }
+
+          const positions = new Float32Array(contour.verts.length * 3);
+          for (let i = 0; i < contour.verts.length; i++) {
+            positions[i * 3] = contour.verts[i][0] - ox;
+            // DXFはZ-up、Three.jsはY-upなので座標軸を入れ替える(Y<->Z)
+            positions[i * 3 + 1] = contour.verts[i][2] - oz;
+            positions[i * 3 + 2] = -(contour.verts[i][1] - oy);
+          }
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+          geometry.setIndex(triangles.flat());
+          geometry.computeVertexNormals();
+
+          const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial(sharedMaterialParams));
+          mesh.name = id;
+          modelRoot.add(mesh);
+          meshes.push({ mesh, matchName: id });
+          originalMaterials.set(mesh.uuid, mesh.material);
+
+          csvLines.push(
+            `${id},${attrs.width.toFixed(4)},${attrs.height.toFixed(4)},` +
+            `${attrs.area.toFixed(6)},${attrs.fillRate.toFixed(4)},${attrs.tilt.toFixed(2)},` +
+            `${attrs.rectAngle.toFixed(2)}`
+          );
         }
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        geometry.setIndex(triangles.flat());
-        geometry.computeVertexNormals();
-
-        const mesh = new THREE.Mesh(
-          geometry,
-          new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide })
-        );
-        mesh.name = id;
-        modelRoot.add(mesh);
-        meshes.push({ mesh, matchName: id });
-        originalMaterials.set(mesh.uuid, mesh.material);
-
-        csvLines.push(
-          `${id},${attrs.width.toFixed(4)},${attrs.height.toFixed(4)},` +
-          `${attrs.area.toFixed(6)},${attrs.fillRate.toFixed(4)}`
-        );
+        showProgress(`属性を計算中... ${end.toLocaleString()} / ${total.toLocaleString()}`, end / total);
+        await nextFrame();  // ブラウザに制御を返す(UIが固まらない)
       }
 
       scene.add(modelRoot);
       frameAll();
       updateDistanceValueText();
+      hideProgress();
       document.getElementById("dropzone-hint").classList.add("hidden");
       document.getElementById("glb-btn").classList.add("loaded");
       document.getElementById("glb-btn").textContent = file.name;
+      document.getElementById("export-glb-btn").disabled = false;
 
       // --- 計算した属性をCSVとして読み込み、自動で色分けまで実行 ---
       loadCSVText(csvLines.join("\n"), "(自動計算) " + file.name.replace(/\.dxf$/i, "") + "_attributes.csv");
+      document.getElementById("attr-source-state").textContent =
+        "✓ DXFから自動計算した属性を使用中(CSVの読み込みは不要です)";
+      document.getElementById("attr-source-state").style.color = "var(--accent)";
       setTimeout(() => {
         document.getElementById("apply-btn").click();
         let msg = `DXFを読み込みました: ${meshes.length} 輪郭\n` +
@@ -978,6 +1158,7 @@ function loadDXFFile(file) {
         setStatus(msg, failed > 0);
       }, 100);
     } catch (err) {
+      hideProgress();
       setStatus("DXFの読み込みに失敗しました: " + err.message, true);
     }
   };
@@ -996,6 +1177,120 @@ document.getElementById("download-csv-btn").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
+
+/* ---- ID付きGLBエクスポート ----
+   表示中の全メッシュを、ノード名(=ID)を保持したGLB(glTF 2.0バイナリ)として書き出す。
+   外部ライブラリを使わず、position/indexとノード名だけの最小構成のGLBを自前で組み立てる。 */
+function exportGLB() {
+  if (meshes.length === 0) return;
+
+  const jsonBuffers = [];   // 各メッシュのバイナリ(position, index)
+  let byteOffset = 0;
+  const bufferViews = [];
+  const accessors = [];
+  const gltfMeshes = [];
+  const nodes = [];
+
+  const pushBufferView = (typedArray, target) => {
+    const bytes = new Uint8Array(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
+    // 4バイト境界にパディング
+    const pad = (4 - (byteOffset % 4)) % 4;
+    if (pad > 0) { jsonBuffers.push(new Uint8Array(pad)); byteOffset += pad; }
+    jsonBuffers.push(bytes);
+    const view = { buffer: 0, byteOffset, byteLength: typedArray.byteLength };
+    if (target) view.target = target;
+    byteOffset += typedArray.byteLength;
+    bufferViews.push(view);
+    return bufferViews.length - 1;
+  };
+
+  for (const { mesh, matchName } of meshes) {
+    const geom = mesh.geometry;
+    const posAttr = geom.getAttribute("position");
+    // ワールド変換を適用した頂点座標を書き出す
+    const pos = new Float32Array(posAttr.count * 3);
+    const tmp = new THREE.Vector3();
+    for (let i = 0; i < posAttr.count; i++) {
+      tmp.fromBufferAttribute(posAttr, i).applyMatrix4(mesh.matrixWorld);
+      pos[i * 3] = tmp.x; pos[i * 3 + 1] = tmp.y; pos[i * 3 + 2] = tmp.z;
+    }
+    // バウンディング(accessorのmin/maxは必須)
+    let mnx = Infinity, mny = Infinity, mnz = Infinity, mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      mnx = Math.min(mnx, pos[i]); mxx = Math.max(mxx, pos[i]);
+      mny = Math.min(mny, pos[i + 1]); mxy = Math.max(mxy, pos[i + 1]);
+      mnz = Math.min(mnz, pos[i + 2]); mxz = Math.max(mxz, pos[i + 2]);
+    }
+
+    const posView = pushBufferView(pos, 34962);
+    const posAccessor = accessors.length;
+    accessors.push({
+      bufferView: posView, componentType: 5126, count: posAttr.count,
+      type: "VEC3", min: [mnx, mny, mnz], max: [mxx, mxy, mxz],
+    });
+
+    const primitive = { attributes: { POSITION: posAccessor }, mode: 4 };
+
+    // インデックス
+    let index = geom.getIndex();
+    if (index) {
+      const arr = index.count > 65535 ? new Uint32Array(index.array) : new Uint16Array(index.array);
+      const compType = index.count > 65535 ? 5125 : 5123;
+      const idxView = pushBufferView(arr, 34963);
+      const idxAccessor = accessors.length;
+      accessors.push({ bufferView: idxView, componentType: compType, count: arr.length, type: "SCALAR" });
+      primitive.indices = idxAccessor;
+    }
+
+    gltfMeshes.push({ primitives: [primitive] });
+    nodes.push({ mesh: gltfMeshes.length - 1, name: String(matchName) });
+  }
+
+  // バイナリチャンクを結合
+  let totalBin = 0;
+  for (const b of jsonBuffers) totalBin += b.byteLength;
+  const binPad = (4 - (totalBin % 4)) % 4;
+  const binChunk = new Uint8Array(totalBin + binPad);
+  let off = 0;
+  for (const b of jsonBuffers) { binChunk.set(b, off); off += b.byteLength; }
+
+  const gltf = {
+    asset: { version: "2.0", generator: "CSV Attribute Colorizer Web" },
+    scene: 0,
+    scenes: [{ nodes: nodes.map((_, i) => i) }],
+    nodes, meshes: gltfMeshes, accessors, bufferViews,
+    buffers: [{ byteLength: binChunk.byteLength }],
+  };
+
+  // JSONチャンク(4バイト境界にスペースでパディング)
+  let jsonStr = JSON.stringify(gltf);
+  while (jsonStr.length % 4 !== 0) jsonStr += " ";
+  const jsonChunk = new TextEncoder().encode(jsonStr);
+
+  const totalLength = 12 + 8 + jsonChunk.byteLength + 8 + binChunk.byteLength;
+  const out = new ArrayBuffer(totalLength);
+  const dv = new DataView(out);
+  let p = 0;
+  dv.setUint32(p, 0x46546c67, true); p += 4; // "glTF"
+  dv.setUint32(p, 2, true); p += 4;
+  dv.setUint32(p, totalLength, true); p += 4;
+  dv.setUint32(p, jsonChunk.byteLength, true); p += 4;
+  dv.setUint32(p, 0x4e4f534a, true); p += 4; // "JSON"
+  new Uint8Array(out, p, jsonChunk.byteLength).set(jsonChunk); p += jsonChunk.byteLength;
+  dv.setUint32(p, binChunk.byteLength, true); p += 4;
+  dv.setUint32(p, 0x004e4942, true); p += 4; // "BIN"
+  new Uint8Array(out, p, binChunk.byteLength).set(binChunk);
+
+  const blob = new Blob([out], { type: "model/gltf-binary" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "model_with_ids.glb";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus(`ID付きGLBを書き出しました: ${meshes.length} オブジェクト`);
+}
+
+document.getElementById("export-glb-btn").addEventListener("click", exportGLB);
 
 /* ドラッグ&ドロップ */
 wrap.addEventListener("dragover", (e) => { e.preventDefault(); wrap.classList.add("dragover"); });
@@ -1052,7 +1347,11 @@ function loadCSVText(text, displayName) {
 
 function loadCSVFile(file) {
   const reader = new FileReader();
-  reader.onload = () => loadCSVText(reader.result, file.name);
+  reader.onload = () => {
+    loadCSVText(reader.result, file.name);
+    document.getElementById("attr-source-state").textContent = "外部CSVの属性を使用中";
+    document.getElementById("attr-source-state").style.color = "var(--ink-dim)";
+  };
   reader.readAsText(file);
 }
 
@@ -1062,11 +1361,18 @@ function refreshAttributeOptions() {
   attrSel.innerHTML = "";
   csvColumns.filter((c) => c !== idCol).forEach((c) => {
     const o = document.createElement("option");
-    o.value = c; o.textContent = c;
+    o.value = c; o.textContent = attrLabel(c);
     attrSel.appendChild(o);
   });
   attrSel.disabled = attrSel.options.length === 0;
+  updateAttrDescription();
 }
+
+function updateAttrDescription() {
+  const attr = document.getElementById("attribute").value;
+  document.getElementById("attr-description").textContent = attrDescription(attr);
+}
+document.getElementById("attribute").addEventListener("change", updateAttrDescription);
 
 document.getElementById("csv-input").addEventListener("change", (e) => {
   if (e.target.files[0]) loadCSVFile(e.target.files[0]);
@@ -1110,8 +1416,9 @@ function lerpColor(a, b, t) {
 
 const HUE_RANGES = { BLUE_RED: [0.66, 0.0], GREEN_RED: [0.33, 0.0], BLUE_YELLOW: [0.66, 0.16] };
 
-function numericToColor(value, vmin, vmax, preset, cLow, cHigh, useMid, cMid) {
+function numericToColor(value, vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert) {
   let t = vmax === vmin ? 0.5 : Math.max(0, Math.min(1, (value - vmin) / (vmax - vmin)));
+  if (invert) t = 1 - t;
   if (preset === "CUSTOM") {
     if (useMid) {
       return t <= 0.5 ? lerpColor(cLow, cMid, t / 0.5) : lerpColor(cMid, cHigh, (t - 0.5) / 0.5);
@@ -1140,7 +1447,17 @@ function textToColor(category) {
 ============================================================ */
 let attributesByMesh = new Map(); // mesh.uuid -> CSV行(インスペクタ用)
 
-document.getElementById("apply-btn").addEventListener("click", () => {
+let hasApplied = false;      // 一度でも色分けを実行したか(即時反映のガード)
+let reapplyTimer = null;
+
+/* 設定変更時の即時反映(実行済みの場合のみ、デバウンス付きで再適用する) */
+function scheduleReapply() {
+  if (!hasApplied) return;
+  clearTimeout(reapplyTimer);
+  reapplyTimer = setTimeout(applyColorize, 150);
+}
+
+function applyColorize() {
   const idCol = document.getElementById("id-column").value;
   const attr = document.getElementById("attribute").value;
   const prefix = document.getElementById("id-prefix").value;
@@ -1149,6 +1466,7 @@ document.getElementById("apply-btn").addEventListener("click", () => {
   const cHigh = hexToRgb01(document.getElementById("color-high").value);
   const cMid = hexToRgb01(document.getElementById("color-mid").value);
   const useMid = document.getElementById("use-mid").checked;
+  const invert = document.getElementById("invert-gradient").checked;
 
   // CSVをIDで引けるようにする
   const dataById = new Map();
@@ -1162,6 +1480,13 @@ document.getElementById("apply-btn").addEventListener("click", () => {
       if (v === "") continue;
       const n = Number(v);
       vmin = Math.min(vmin, n); vmax = Math.max(vmax, n);
+    }
+    // 範囲の手動指定が有効なら、入力値で上書きする(空欄の側は自動のまま)
+    if (document.getElementById("manual-range").checked) {
+      const manMin = Number(document.getElementById("range-min").value);
+      const manMax = Number(document.getElementById("range-max").value);
+      if (document.getElementById("range-min").value.trim() !== "" && Number.isFinite(manMin)) vmin = manMin;
+      if (document.getElementById("range-max").value.trim() !== "" && Number.isFinite(manMax)) vmax = manMax;
     }
   }
 
@@ -1182,21 +1507,28 @@ document.getElementById("apply-btn").addEventListener("click", () => {
     const raw = (row[attr] ?? "").toString();
     let rgb;
     if (numericMode && raw.trim() !== "" && Number.isFinite(vmin)) {
-      rgb = numericToColor(Number(raw), vmin, vmax, preset, cLow, cHigh, useMid, cMid);
+      rgb = numericToColor(Number(raw), vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert);
     } else if (numericMode) {
       rgb = [0.5, 0.5, 0.5];
     } else {
       rgb = textToColor(raw);
     }
-    mesh.material = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(rgb[0], rgb[1], rgb[2]),
-      roughness: 0.85, metalness: 0.0,
-      side: THREE.DoubleSide,
-    });
+    // 既にこのアプリで着色済みのマテリアルなら、色だけ更新する(再適用の高速化)
+    if (mesh.material && mesh.material.userData && mesh.material.userData.gac) {
+      mesh.material.color.setRGB(rgb[0], rgb[1], rgb[2]);
+    } else {
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(rgb[0], rgb[1], rgb[2]),
+        roughness: 0.85, metalness: 0.0,
+        side: THREE.DoubleSide,
+      });
+      mat.userData.gac = true;
+      mesh.material = mat;
+    }
     matched++;
   }
 
-  updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid);
+  updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert);
   rebuildLabels();
   document.getElementById("reset-btn").disabled = false;
   document.getElementById("download-csv-btn").disabled = false;
@@ -1204,10 +1536,23 @@ document.getElementById("apply-btn").addEventListener("click", () => {
   let msg = `完了: ${matched} 個に反映 (対象属性: ${attr}, ${numericMode ? "数値" : "テキスト"})`;
   if (unmatched.length) msg += `\n未マッチ: ${unmatched.length} 個 (例: ${unmatched.slice(0, 5).join(", ")})`;
   setStatus(msg, unmatched.length > 0);
-});
+  hasApplied = true;
+}
+
+document.getElementById("apply-btn").addEventListener("click", applyColorize);
+
+/* 設定変更で即時反映(一度実行した後のみ有効) */
+for (const id of ["preset", "use-mid", "manual-range", "attribute", "id-prefix", "invert-gradient"]) {
+  document.getElementById(id).addEventListener("change", scheduleReapply);
+}
+for (const id of ["color-low", "color-mid", "color-high", "range-min", "range-max"]) {
+  document.getElementById(id).addEventListener("input", scheduleReapply);
+}
 
 /* 色のリセット */
 document.getElementById("reset-btn").addEventListener("click", () => {
+  hasApplied = false;  // リセット後は設定を変えても自動で再着色しない
+  clearTimeout(reapplyTimer);
   for (const { mesh } of meshes) {
     const orig = originalMaterials.get(mesh.uuid);
     if (orig) mesh.material = orig;
@@ -1226,11 +1571,11 @@ function rgbToCss(rgb) {
   return `rgb(${Math.round(rgb[0] * 255)},${Math.round(rgb[1] * 255)},${Math.round(rgb[2] * 255)})`;
 }
 
-function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid) {
+function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert) {
   const legend = document.getElementById("legend");
   const numDiv = document.getElementById("legend-numeric");
   const catDiv = document.getElementById("legend-cats");
-  document.getElementById("legend-title").textContent = attr;
+  document.getElementById("legend-title").textContent = attrLabel(attr);
   legend.style.display = "block";
 
   if (numericMode) {
@@ -1238,7 +1583,7 @@ function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid
     catDiv.style.display = "none";
     const stops = [];
     for (let i = 0; i <= 10; i++) {
-      const rgb = numericToColor(vmin + (vmax - vmin) * (i / 10), vmin, vmax, preset, cLow, cHigh, useMid, cMid);
+      const rgb = numericToColor(vmin + (vmax - vmin) * (i / 10), vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert);
       stops.push(`${rgbToCss(rgb)} ${i * 10}%`);
     }
     document.getElementById("legend-bar").style.background = `linear-gradient(to right, ${stops.join(",")})`;
@@ -1296,7 +1641,7 @@ canvas.addEventListener("pointerup", (e) => {
   if (row) {
     for (const [k, v] of Object.entries(row)) {
       const tr = document.createElement("tr");
-      const td1 = document.createElement("td"); td1.textContent = k;
+      const td1 = document.createElement("td"); td1.textContent = attrLabel(k);
       const td2 = document.createElement("td"); td2.textContent = v;
       tr.appendChild(td1); tr.appendChild(td2);
       table.appendChild(tr);
@@ -1430,7 +1775,7 @@ function refreshLabelContentOptions() {
   };
 
   makeItem("__id__", "ID(オブジェクト名)");
-  csvColumns.filter((c) => c !== idCol).forEach((c) => makeItem(c, c));
+  csvColumns.filter((c) => c !== idCol).forEach((c) => makeItem(c, attrLabel(c)));
 }
 
 showLabelsCheckbox.addEventListener("change", rebuildLabels);
@@ -1469,6 +1814,28 @@ document.getElementById("preset").addEventListener("change", (e) => {
 });
 document.getElementById("use-mid").addEventListener("change", (e) => {
   document.getElementById("color-mid").style.display = e.target.checked ? "block" : "none";
+});
+
+/* 手動範囲指定のトグル */
+document.getElementById("manual-range").addEventListener("change", (e) => {
+  document.getElementById("manual-range-inputs").style.display = e.target.checked ? "block" : "none";
+});
+
+/* 「データの最小・最大を入れる」ボタン */
+document.getElementById("autofill-range-btn").addEventListener("click", () => {
+  const attr = document.getElementById("attribute").value;
+  if (!attr || csvRows.length === 0) return;
+  let mn = Infinity, mx = -Infinity;
+  for (const row of csvRows) {
+    const v = (row[attr] ?? "").toString().trim();
+    if (v === "") continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) { mn = Math.min(mn, n); mx = Math.max(mx, n); }
+  }
+  if (Number.isFinite(mn)) {
+    document.getElementById("range-min").value = Number(mn.toPrecision(6));
+    document.getElementById("range-max").value = Number(mx.toPrecision(6));
+  }
 });
 
 /* ============================================================
