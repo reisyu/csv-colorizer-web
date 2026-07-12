@@ -60,7 +60,21 @@
     color: var(--accent);
     letter-spacing: 0.08em;
     margin-bottom: 10px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
+  .step-label::after {
+    content: "▾";
+    color: var(--ink-dim);
+    font-size: 10px;
+    transition: transform 0.15s;
+  }
+  .step.collapsed .step-label { margin-bottom: 0; }
+  .step.collapsed .step-label::after { transform: rotate(-90deg); }
+  .step.collapsed > *:not(.step-label) { display: none !important; }
   .row { margin-bottom: 10px; }
   .row:last-child { margin-bottom: 0; }
   label.small {
@@ -162,6 +176,26 @@
     max-height: 140px;
     overflow-y: auto;
   }
+  .filter-rule {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .filter-rule select { flex: 1.6; min-width: 0; font-size: 12px; }
+  .filter-rule input { flex: 1; min-width: 0; font-size: 12px; }
+  .filter-rule .rule-remove {
+    background: transparent;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    color: var(--ink-dim);
+    width: 22px; height: 26px;
+    cursor: pointer;
+    flex: none;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .filter-rule .rule-remove:hover { color: var(--warn); border-color: var(--warn); }
 
   #status {
     font-size: 11px;
@@ -179,7 +213,7 @@
 
   /* ---------- ビューポート ---------- */
   #viewport-wrap { flex: 1; position: relative; height: 100%; }
-  #viewport { width: 100%; height: 100%; display: block; }
+  #viewport { width: 100%; height: 100%; display: block; touch-action: none; }
 
   #dropzone-hint {
     position: absolute;
@@ -204,6 +238,23 @@
     font-size: 15px;
     pointer-events: none;
   }
+
+  /* ---------- サンプルデータ表示バッジ ---------- */
+  #sample-badge {
+    position: absolute;
+    left: 16px;
+    top: 16px;
+    background: rgba(33, 36, 42, 0.88);
+    border: 1px solid var(--accent-dim);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--accent);
+    display: none;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #sample-badge.active { display: block; }
 
   /* ---------- プログレス表示 ---------- */
   #progress-overlay {
@@ -254,9 +305,24 @@
     padding: 10px 12px;
     font-size: 11px;
     font-family: var(--mono);
-    min-width: 180px;
+    min-width: 220px;
     display: none;
   }
+  #legend-hist {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 42px;
+    margin-bottom: 3px;
+  }
+  .hist-bin {
+    flex: 1;
+    min-height: 1px;
+    border-radius: 1px 1px 0 0;
+    opacity: 0.9;
+    cursor: default;
+  }
+  .hist-bin:hover { opacity: 1; outline: 1px solid var(--ink); }
   #legend .legend-title {
     font-family: var(--sans);
     font-size: 11px;
@@ -345,27 +411,47 @@
   <h1>Geometry Attribute Colorizer</h1>
   <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー</div>
 
+  <div id="status" style="margin-bottom:12px">モデル(GLB / DXF)を読み込んで開始してください。</div>
+
   <!-- STEP 1: モデル -->
   <div class="step">
     <div class="step-label">1. モデルを読み込む</div>
     <div class="row">
       <label class="filebtn" id="glb-btn" for="glb-input">クリックして .glb / .dxf を選択<br>(ビューポートへのドロップも可)</label>
-      <input type="file" id="glb-input" accept=".glb,.gltf,.dxf">
+      <input type="file" id="glb-input">
     </div>
     <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
       DXF(閉じた3Dポリライン)は、幅・高さ・面積・矩形充填率・傾斜角・矩形回転角を自動計算します
+    </div>
+    <div class="row">
+      <label class="filebtn" id="obj-btn" for="obj-input">フォトグラメトリモデル(背景)を重ねる<br>(.obj / .mtl / テクスチャ画像をまとめて選択)</label>
+      <input type="file" id="obj-input" multiple>
+      <label class="filebtn" id="obj-folder-btn" for="obj-folder-input" style="margin-top:6px">またはフォルダごと選択<br>(OBJ/MTL/テクスチャを自動収集)</label>
+      <input type="file" id="obj-folder-input" webkitdirectory multiple>
+    </div>
+    <div id="obj-controls" style="display:none">
+      <div class="row">
+        <label class="small">背景モデルの不透明度 <span id="obj-opacity-value" class="slider-value">100%</span></label>
+        <input type="range" id="obj-opacity" min="10" max="100" step="5" value="100">
+      </div>
+      <div class="row">
+        <label class="checkbox-row"><input type="checkbox" id="obj-visible" checked> 背景モデルを表示</label>
+      </div>
+      <div class="row">
+        <button class="ghost" id="obj-remove" style="margin-top:0">背景モデルを削除</button>
+      </div>
     </div>
   </div>
 
   <!-- STEP 2: 属性データ -->
   <div class="step">
-    <div class="step-label">2. 属性データ</div>
+    <div class="step-label">2. 属性データを読み込む</div>
     <div class="row" id="attr-source-state" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
       DXFを読み込んだ場合は自動計算されるため、CSVの読み込みは不要です
     </div>
     <div class="row">
       <label class="filebtn" id="csv-btn" for="csv-input">クリックして .csv を選択</label>
-      <input type="file" id="csv-input" accept=".csv,text/csv">
+      <input type="file" id="csv-input">
     </div>
     <div class="row">
       <label class="small" for="id-column">ID列名</label>
@@ -374,6 +460,9 @@
     <div class="row">
       <label class="small" for="id-prefix">オブジェクト名の接頭辞(あれば)</label>
       <input type="text" id="id-prefix" placeholder="例: Cell_">
+    </div>
+    <div class="row">
+      <button class="ghost" id="renumber-btn" style="margin-top:0">IDを振り直す(立面図の左下から)</button>
     </div>
   </div>
 
@@ -415,14 +504,14 @@
       <div style="display:flex; gap:8px">
         <div style="flex:1">
           <label class="small" for="range-min">最小値</label>
-          <input type="text" id="range-min" placeholder="自動">
+          <input type="text" id="range-min" inputmode="decimal" placeholder="(空欄で自動)">
         </div>
         <div style="flex:1">
           <label class="small" for="range-max">最大値</label>
-          <input type="text" id="range-max" placeholder="自動">
+          <input type="text" id="range-max" inputmode="decimal" placeholder="(空欄で自動)">
         </div>
       </div>
-      <button class="ghost" id="autofill-range-btn" style="margin-top:8px">データの最小・最大を入れる</button>
+      <button class="ghost" id="autofill-range-btn" style="margin-top:8px">現在の最小・最大を取得</button>
     </div>
     <div class="row">
       <button class="action" id="apply-btn" disabled>色分けを実行</button>
@@ -430,9 +519,35 @@
     </div>
   </div>
 
-  <!-- STEP 4: ラベル -->
+  <!-- STEP 4: フィルタ -->
   <div class="step">
-    <div class="step-label">4. ラベル表示</div>
+    <div class="step-label">4. フィルタで絞り込む</div>
+    <div class="row">
+      <label class="checkbox-row"><input type="checkbox" id="filter-enable"> フィルタを有効にする</label>
+    </div>
+    <div id="filter-body" style="display:none">
+      <div class="row">
+        <label class="small">除外条件(値が範囲外のオブジェクトを除外)</label>
+        <div id="filter-rules"></div>
+        <button class="ghost" id="add-filter-rule" style="margin-top:4px">＋ 条件を追加</button>
+      </div>
+      <div class="row">
+        <label class="checkbox-row"><input type="checkbox" id="filter-self-intersect"> 自己交差しているオブジェクトを除外</label>
+      </div>
+      <div class="row">
+        <label class="small" for="filter-mode">除外したオブジェクトの表示</label>
+        <select id="filter-mode">
+          <option value="ghost">半透明で表示</option>
+          <option value="hide">完全に非表示</option>
+        </select>
+      </div>
+      <div class="row" id="filter-result" style="font-size:11px;color:var(--ink-dim)"></div>
+    </div>
+  </div>
+
+  <!-- STEP 5: ラベル -->
+  <div class="step">
+    <div class="step-label">5. ラベルを表示する</div>
     <div class="row">
       <label class="checkbox-row"><input type="checkbox" id="show-labels"> オブジェクトの位置に属性を表示</label>
     </div>
@@ -457,25 +572,30 @@
 
   <!-- STEP 5: 書き出し -->
   <div class="step">
-    <div class="step-label">5. 書き出し</div>
+    <div class="step-label">6. 書き出す</div>
     <div class="row">
       <button class="ghost" id="download-csv-btn" disabled style="margin-top:0">属性をCSVで保存</button>
     </div>
     <div class="row">
       <button class="ghost" id="export-glb-btn" disabled style="margin-top:0">ID付きGLBで保存</button>
     </div>
+    <div class="row">
+      <button class="ghost" id="export-svg-btn" disabled style="margin-top:0">立面図をSVGで保存</button>
+    </div>
+    <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
+      SVGはモデルの正面から見た平行投影の立面図です。現在の色分け・フィルタ・ラベル設定が反映されます
+    </div>
     <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
       GLBはオブジェクト名(ID)を保持したまま書き出されます。Blender等で再利用できます
     </div>
   </div>
-
-  <div id="status">モデル(GLB / DXF)を読み込んで開始してください。</div>
 </aside>
 
 <div id="viewport-wrap">
   <canvas id="viewport"></canvas>
   <div id="labels"></div>
-  <div id="dropzone-hint">GLBファイルをここにドラッグ&ドロップ</div>
+  <div id="dropzone-hint">ファイルをここにドロップ(GLB / DXF / OBJ / CSV)</div>
+  <div id="sample-badge">サンプルデータを表示中</div>
 
   <div id="progress-overlay">
     <div id="progress-box">
@@ -487,6 +607,7 @@
   <div id="legend">
     <div class="legend-title" id="legend-title"></div>
     <div id="legend-numeric">
+      <div id="legend-hist"></div>
       <div id="legend-bar"></div>
       <div id="legend-range"><span id="legend-min"></span><span id="legend-max"></span></div>
     </div>
@@ -543,13 +664,84 @@ orbit.update();
 
 let dragMode = null; // "rotate" | "pan"
 let lastX = 0, lastY = 0;
+const activePointers = new Map();  // マルチタッチ管理(iPad対応)
+let pinchLastDist = 0;
+let pinchLastMid = null;
+
+/* 回転中心の自動補正:
+   画面中央の先にあるオブジェクト表面の点を回転中心にする。
+   パンやズームの後、ピボットの奥行きが見ている対象とズレて
+   回転が振り回される問題を防ぐ。カメラ位置は動かさないため画面は跳ねない。 */
+const _pivotRay = new THREE.Raycaster();
+const _screenCenter = new THREE.Vector2(0, 0);
+function retargetPivot(screenPos) {
+  const targets = [];
+  if (modelRoot) targets.push(modelRoot);
+  if (backgroundRoot && backgroundRoot.visible) targets.push(backgroundRoot);
+  if (targets.length === 0) return;
+
+  _pivotRay.setFromCamera(screenPos || _screenCenter, camera);
+  const hits = _pivotRay.intersectObjects(targets, true);
+  let newTarget = null;
+  for (const h of hits) {
+    if (h.object.visible) { newTarget = h.point.clone(); break; }
+  }
+  if (!newTarget) {
+    // 何もヒットしない場合: 現在のターゲットまでの距離を保ったまま視線軸上に置く
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const dist = Math.max(orbit.target.clone().sub(camera.position).dot(dir), modelSize * 0.05);
+    newTarget = camera.position.clone().addScaledVector(dir, dist);
+  }
+  // カメラ位置は固定し、ターゲット(回転中心)だけ差し替える
+  const offset = new THREE.Vector3().subVectors(camera.position, newTarget);
+  orbit.target.copy(newTarget);
+  orbit.spherical.setFromVector3(offset);
+  orbit.update();
+}
 
 canvas.addEventListener("pointerdown", (e) => {
-  dragMode = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
-  lastX = e.clientX; lastY = e.clientY;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2) {
+    // 2本指: ピンチズーム + パンの開始
+    const [p1, p2] = [...activePointers.values()];
+    pinchLastDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    pinchLastMid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    dragMode = null;
+  } else if (activePointers.size === 1) {
+    dragMode = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
+    if (dragMode === "rotate") retargetPivot();  // 回転開始時に中心を補正
+    lastX = e.clientX; lastY = e.clientY;
+  }
   canvas.setPointerCapture(e.pointerId);
 });
+
 canvas.addEventListener("pointermove", (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activePointers.size === 2) {
+    // 2本指ジェスチャ: 指の間隔でズーム、中点の移動でパン
+    const [p1, p2] = [...activePointers.values()];
+    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    if (pinchLastDist > 0 && dist > 0) {
+      orbit.spherical.radius *= pinchLastDist / dist;
+      orbit.spherical.radius = Math.max(0.01, orbit.spherical.radius);
+    }
+    if (pinchLastMid) {
+      const panScale = orbit.spherical.radius * 0.0012;
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+      orbit.target.addScaledVector(right, -(mid.x - pinchLastMid.x) * panScale);
+      orbit.target.addScaledVector(up, (mid.y - pinchLastMid.y) * panScale);
+    }
+    pinchLastDist = dist;
+    pinchLastMid = mid;
+    orbit.update();
+    return;
+  }
+
   if (!dragMode) return;
   const dx = e.clientX - lastX, dy = e.clientY - lastY;
   lastX = e.clientX; lastY = e.clientY;
@@ -565,7 +757,17 @@ canvas.addEventListener("pointermove", (e) => {
   }
   orbit.update();
 });
-canvas.addEventListener("pointerup", () => { dragMode = null; });
+
+function releasePointer(e) {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) {
+    pinchLastDist = 0;
+    pinchLastMid = null;
+  }
+  if (activePointers.size === 0) dragMode = null;
+}
+canvas.addEventListener("pointerup", releasePointer);
+canvas.addEventListener("pointercancel", releasePointer);
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
@@ -600,6 +802,8 @@ let csvColumns = [];             // 列名
 let originalMaterials = new Map(); // mesh.uuid -> 元マテリアル
 let labelEntries = [];           // ラベル { el, worldPos } の配列(定義はラベルセクション)
 let modelSize = 10;              // モデル全体のサイズ(距離カリングの基準に使う)
+let backgroundRoot = null;       // フォトグラメトリ等の背景モデル
+const worldOffset = { set: false, x: 0, y: 0, z: 0 };  // DXF/OBJ共通の原点シフト量
 const statusEl = document.getElementById("status");
 
 function setStatus(text, warn = false) {
@@ -618,6 +822,12 @@ const ATTR_INFO = {
   FillRate:  { jp: "矩形充填率", desc: "輪郭の面積 ÷ 外接矩形の面積(1に近いほど矩形に近い形)" },
   Tilt:      { jp: "傾斜角",   desc: "面の法線と鉛直(+Z)のなす角。0°=水平な面、90°=垂直な面" },
   RectAngle: { jp: "矩形回転角", desc: "外接矩形の水平辺が面内の水平基準から回転している角度。反時計回り(右上がり)がプラス" },
+  Flatness:  { jp: "平面性",   desc: "フィット平面からの最大ズレ距離。大きいほど平面近似の信頼性が低い" },
+  SelfIntersect: { jp: "自己交差", desc: "輪郭の辺同士が交差していれば1、正常なら0。1の輪郭は計算結果が信頼できない可能性がある" },
+  X: { jp: "重心X", desc: "輪郭の重心のX座標(原点シフト前の元の座標値)" },
+  Y: { jp: "重心Y", desc: "輪郭の重心のY座標(原点シフト前の元の座標値)" },
+  Z: { jp: "重心Z", desc: "輪郭の重心のZ座標=標高(原点シフト前の元の座標値)" },
+  SrcID: { jp: "元ID", desc: "読み込み時のID(DXFのレイヤー名由来)。自動採番で振り直される前の値" },
 };
 
 function attrLabel(col) {
@@ -799,9 +1009,11 @@ function loadGLBFile(file) {
       frameAll();
       updateDistanceValueText();
       document.getElementById("dropzone-hint").classList.add("hidden");
+      document.getElementById("sample-badge").classList.remove("active");
       document.getElementById("glb-btn").classList.add("loaded");
       document.getElementById("glb-btn").textContent = file.name;
       document.getElementById("export-glb-btn").disabled = false;
+      document.getElementById("export-svg-btn").disabled = false;
       setStatus(`GLBを読み込みました: ${meshes.length} メッシュ`);
       updateApplyEnabled();
     } catch (err) {
@@ -812,8 +1024,9 @@ function loadGLBFile(file) {
 }
 
 function frameAll() {
-  if (!modelRoot) return;
-  const box = new THREE.Box3().setFromObject(modelRoot);
+  const box = new THREE.Box3();
+  if (modelRoot) box.expandByObject(modelRoot);
+  if (backgroundRoot) box.expandByObject(backgroundRoot);
   if (box.isEmpty()) return;
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3()).length();
@@ -830,8 +1043,10 @@ function frameAll() {
 document.getElementById("glb-input").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  if (file.name.toLowerCase().endsWith(".dxf")) loadDXFFile(file);
-  else loadGLBFile(file);
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".dxf")) loadDXFFile(file);
+  else if (lower.endsWith(".glb") || lower.endsWith(".gltf")) loadGLBFile(file);
+  else setStatus(`対応していないファイル形式です: ${file.name}\n(.glb / .gltf / .dxf を選択してください)`, true);
   e.target.value = ""; // 同じファイルの再読み込みを可能にする
 });
 
@@ -1045,7 +1260,33 @@ function computeContourAttributes(verts) {
     rectAngle = Math.atan2(compV, compH) * 180 / Math.PI;
   }
 
-  return { width, height, area, fillRate, tilt, rectAngle, pts2d };
+  // 平面性: フィット平面(重心を通る)からの最大ズレ距離
+  let flatness = 0;
+  for (const p of verts) {
+    const d = Math.abs((p[0] - cx) * normal[0] + (p[1] - cy) * normal[1] + (p[2] - cz) * normal[2]);
+    if (d > flatness) flatness = d;
+  }
+
+  // 自己交差: 投影した2D輪郭で、隣接しない辺同士が交差していないか判定
+  const segIntersect = (a, b, c, d) => {
+    const cr = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+    const d1 = cr(c, d, a), d2 = cr(c, d, b), d3 = cr(a, b, c), d4 = cr(a, b, d);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+  };
+  let selfIntersect = 0;
+  const np = pts2d.length;
+  outer:
+  for (let i = 0; i < np; i++) {
+    for (let j = i + 2; j < np; j++) {
+      if (i === 0 && j === np - 1) continue; // 最初と最後の辺は隣接扱い
+      if (segIntersect(pts2d[i], pts2d[(i + 1) % np], pts2d[j], pts2d[(j + 1) % np])) {
+        selfIntersect = 1;
+        break outer;
+      }
+    }
+  }
+
+  return { width, height, area, fillRate, tilt, rectAngle, flatness, selfIntersect, pts2d };
 }
 
 function loadDXFFile(file) {
@@ -1060,21 +1301,28 @@ function loadDXFFile(file) {
       const contours = parseDXF(reader.result);
       if (contours.length === 0) {
         hideProgress();
-        setStatus("DXFから閉じたポリラインが見つかりませんでした。", true);
+        setStatus("DXFから閉じたポリライン(オブジェクトの輪郭)が見つかりませんでした。", true);
         return;
       }
 
-      // --- 原点シフト量を全頂点のバウンディングボックス中心から決める ---
-      let minX = Infinity, minY = Infinity, minZ = Infinity;
-      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-      for (const c of contours) {
-        for (const [px, py, pz] of c.verts) {
-          if (px < minX) minX = px; if (px > maxX) maxX = px;
-          if (py < minY) minY = py; if (py > maxY) maxY = py;
-          if (pz < minZ) minZ = pz; if (pz > maxZ) maxZ = pz;
+      // --- 原点シフト量を決める(背景モデルと共有。既にあれば再利用して位置を揃える) ---
+      let ox, oy, oz;
+      if (worldOffset.set) {
+        ox = worldOffset.x; oy = worldOffset.y; oz = worldOffset.z;
+      } else {
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        for (const c of contours) {
+          for (const [px, py, pz] of c.verts) {
+            if (px < minX) minX = px; if (px > maxX) maxX = px;
+            if (py < minY) minY = py; if (py > maxY) maxY = py;
+            if (pz < minZ) minZ = pz; if (pz > maxZ) maxZ = pz;
+          }
         }
+        ox = (minX + maxX) / 2; oy = (minY + maxY) / 2; oz = (minZ + maxZ) / 2;
+        worldOffset.set = true;
+        worldOffset.x = ox; worldOffset.y = oy; worldOffset.z = oz;
       }
-      const ox = (minX + maxX) / 2, oy = (minY + maxY) / 2, oz = (minZ + maxZ) / 2;
 
       // --- メッシュ生成 + 属性計算(チャンク分割でUIを固めない) ---
       if (modelRoot) scene.remove(modelRoot);
@@ -1082,7 +1330,7 @@ function loadDXFFile(file) {
       modelRoot = new THREE.Group();
       modelRoot.name = "DXF";
       meshes = [];
-      const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle"];
+      const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle,Flatness,SelfIntersect,X,Y,Z,SrcID"];
       let failed = 0;
 
       const CHUNK = 200;
@@ -1121,14 +1369,21 @@ function loadDXFFile(file) {
 
           const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial(sharedMaterialParams));
           mesh.name = id;
+          mesh.userData.isContour = true;  // 頂点順序が輪郭そのもの(SVG書き出し対象)
           modelRoot.add(mesh);
           meshes.push({ mesh, matchName: id });
           originalMaterials.set(mesh.uuid, mesh.material);
 
+          // 重心(オフセット前の元座標)
+          let gx = 0, gy = 0, gz = 0;
+          for (const p of contour.verts) { gx += p[0]; gy += p[1]; gz += p[2]; }
+          gx /= contour.verts.length; gy /= contour.verts.length; gz /= contour.verts.length;
+
           csvLines.push(
             `${id},${attrs.width.toFixed(4)},${attrs.height.toFixed(4)},` +
             `${attrs.area.toFixed(6)},${attrs.fillRate.toFixed(4)},${attrs.tilt.toFixed(2)},` +
-            `${attrs.rectAngle.toFixed(2)}`
+            `${attrs.rectAngle.toFixed(2)},${attrs.flatness.toFixed(4)},${attrs.selfIntersect},` +
+            `${gx.toFixed(4)},${gy.toFixed(4)},${gz.toFixed(4)},${id}`
           );
         }
         showProgress(`属性を計算中... ${end.toLocaleString()} / ${total.toLocaleString()}`, end / total);
@@ -1140,9 +1395,11 @@ function loadDXFFile(file) {
       updateDistanceValueText();
       hideProgress();
       document.getElementById("dropzone-hint").classList.add("hidden");
+      document.getElementById("sample-badge").classList.remove("active");
       document.getElementById("glb-btn").classList.add("loaded");
       document.getElementById("glb-btn").textContent = file.name;
       document.getElementById("export-glb-btn").disabled = false;
+      document.getElementById("export-svg-btn").disabled = false;
 
       // --- 計算した属性をCSVとして読み込み、自動で色分けまで実行 ---
       loadCSVText(csvLines.join("\n"), "(自動計算) " + file.name.replace(/\.dxf$/i, "") + "_attributes.csv");
@@ -1151,10 +1408,12 @@ function loadDXFFile(file) {
       document.getElementById("attr-source-state").style.color = "var(--accent)";
       setTimeout(() => {
         document.getElementById("apply-btn").click();
-        let msg = `DXFを読み込みました: ${meshes.length} 輪郭\n` +
-          `幅・高さ・面積・矩形充填率を自動計算しました。\n` +
+        renumberIds();  // IDを立面図の左下から自動採番(元IDはSrcID属性に保持)
+        let msg = `DXFを読み込みました: ${meshes.length} オブジェクト\n` +
+          `幾何属性(幅・高さ・面積など)を自動計算しました。\n` +
+          `IDは立面図の左下から自動採番済み(元IDはSrcID属性)。\n` +
           `原点シフト量: (${ox.toFixed(1)}, ${oy.toFixed(1)}, ${oz.toFixed(1)})`;
-        if (failed > 0) msg += `\n計算できなかった輪郭: ${failed} 個`;
+        if (failed > 0) msg += `\n計算できなかったオブジェクト: ${failed} 個`;
         setStatus(msg, failed > 0);
       }, 100);
     } catch (err) {
@@ -1292,14 +1551,577 @@ function exportGLB() {
 
 document.getElementById("export-glb-btn").addEventListener("click", exportGLB);
 
+/* ============================================================
+   立面図SVG書き出し
+   ・全石の面法線の平均を水平化した方向から見た正射投影(壁の正面)
+   ・輪郭ポリゴンをベクターのまま出力。現在の色分け・フィルタが反映される
+   ・凡例(タイトル・ヒストグラム・グラデーションバー・最小最大)を埋め込む
+   ・ラベル表示がONなら、石ごとのテキストも出力する
+============================================================ */
+function exportElevationSVG() {
+  // 対象: 輪郭モデルかつ表示中(フィルタ除外は出力しない)
+  const items = [];
+  let refNormal = null;
+  const avgN = new THREE.Vector3();
+  const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+
+  for (const { mesh, matchName } of meshes) {
+    if (!mesh.userData.isContour) continue;
+    if (!mesh.visible || mesh.userData.filtered) continue;
+    const pos = mesh.geometry.getAttribute("position");
+    if (!pos || pos.count < 3) continue;
+
+    // Newell法で輪郭の法線を求める(Y-up空間)
+    let nx = 0, ny = 0, nz = 0;
+    for (let i = 0; i < pos.count; i++) {
+      tmpA.fromBufferAttribute(pos, i);
+      tmpB.fromBufferAttribute(pos, (i + 1) % pos.count);
+      nx += (tmpA.y - tmpB.y) * (tmpA.z + tmpB.z);
+      ny += (tmpA.z - tmpB.z) * (tmpA.x + tmpB.x);
+      nz += (tmpA.x - tmpB.x) * (tmpA.y + tmpB.y);
+    }
+    const n = new THREE.Vector3(nx, ny, nz);
+    if (n.lengthSq() < 1e-12) continue;
+    n.normalize();
+    // 表裏判定: 石垣の外向き法線は上向き成分(DXFのZ+ = Three.jsのY+)を持つ性質を利用する。
+    // 上向き成分がはっきりしている場合はそれを基準に、ほぼ水平な場合のみ参照法線に揃える
+    if (Math.abs(n.y) > 0.05) {
+      if (n.y < 0) n.negate();
+    } else if (refNormal && n.dot(refNormal) < 0) {
+      n.negate();
+    }
+    if (refNormal === null) refNormal = n.clone();
+    avgN.add(n);
+    items.push({ mesh, matchName, pos });
+  }
+
+  if (items.length === 0) {
+    setStatus("SVG書き出しはDXF/サンプルから読み込んだモデルでのみ利用できます。", true);
+    return;
+  }
+
+  // 視線方向: 平均法線を水平化(立面図なので上下方向の成分を除去)
+  const N = new THREE.Vector3(avgN.x, 0, avgN.z);
+  if (N.lengthSq() < 1e-9) N.set(0, 0, 1);
+  N.normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3().crossVectors(up, N).normalize();
+
+  // 投影: sx=右方向成分, sy=上方向成分, depth=視線方向成分
+  let minSX = Infinity, maxSX = -Infinity, minSY = Infinity, maxSY = -Infinity;
+  for (const item of items) {
+    const pts = [];
+    let depthSum = 0;
+    for (let i = 0; i < item.pos.count; i++) {
+      tmpA.fromBufferAttribute(item.pos, i);
+      const sx = tmpA.dot(right), sy = tmpA.dot(up);
+      pts.push([sx, sy]);
+      depthSum += tmpA.dot(N);
+      if (sx < minSX) minSX = sx; if (sx > maxSX) maxSX = sx;
+      if (sy < minSY) minSY = sy; if (sy > maxSY) maxSY = sy;
+    }
+    item.pts = pts;
+    item.depth = depthSum / item.pos.count;
+  }
+  items.sort((a, b) => a.depth - b.depth);  // 奥から手前へ描画
+
+  // レイアウト: 幅1600pxに収め、下部に凡例スペースを確保
+  const contentW = 1600, margin = 50, legendH = 130;
+  const spanX = Math.max(maxSX - minSX, 1e-9);
+  const spanY = Math.max(maxSY - minSY, 1e-9);
+  const scale = contentW / spanX;
+  const contentH = spanY * scale;
+  const svgW = contentW + margin * 2;
+  const svgH = contentH + margin * 2 + legendH;
+  const toX = (sx) => margin + (sx - minSX) * scale;
+  const toY = (sy) => margin + (maxSY - sy) * scale;  // SVGはY下向きなので反転
+
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const parts = [];
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${Math.ceil(svgH)}" viewBox="0 0 ${svgW} ${Math.ceil(svgH)}" font-family="sans-serif">`);
+  parts.push(`<rect width="100%" height="100%" fill="#ffffff"/>`);
+
+  // --- 石のポリゴン ---
+  for (const item of items) {
+    const color = "#" + item.mesh.material.color.getHexString();
+    const ptsStr = item.pts.map(([sx, sy]) => `${toX(sx).toFixed(2)},${toY(sy).toFixed(2)}`).join(" ");
+    parts.push(`<polygon points="${ptsStr}" fill="${color}" stroke="#444444" stroke-width="1" stroke-linejoin="round"/>`);
+  }
+
+  // --- ラベル(表示ONのときのみ) ---
+  if (showLabelsCheckbox.checked) {
+    const keys = getSelectedLabelKeys();
+    const multi = keys.length > 1;
+    for (const item of items) {
+      const row = attributesByMesh.get(item.mesh.uuid);
+      const linesOut = [];
+      for (const key of keys) {
+        if (key === "__id__") linesOut.push(item.matchName);
+        else if (row && row[key] !== undefined && String(row[key]).trim() !== "") {
+          linesOut.push((multi ? key + ": " : "") + formatValue(row[key]));
+        }
+      }
+      if (linesOut.length === 0) continue;
+      let cx = 0, cy = 0;
+      for (const [sx, sy] of item.pts) { cx += sx; cy += sy; }
+      cx /= item.pts.length; cy /= item.pts.length;
+      const fs = 11;
+      const tx = toX(cx).toFixed(1);
+      const ty0 = toY(cy) - (linesOut.length - 1) * fs / 2;
+      const spans = linesOut.map((t, i) =>
+        `<tspan x="${tx}" y="${(ty0 + i * fs * 1.2).toFixed(1)}">${esc(t)}</tspan>`).join("");
+      parts.push(`<text text-anchor="middle" font-size="${fs}" fill="#222222">${spans}</text>`);
+    }
+  }
+
+  // --- 凡例 ---
+  if (lastLegendState) {
+    const L = lastLegendState;
+    const lx = margin, ly = contentH + margin * 2;
+    parts.push(`<text x="${lx}" y="${ly}" font-size="14" fill="#222222">${esc(attrLabel(L.attr))}  n=${items.length}</text>`);
+
+    if (L.numericMode) {
+      const barW = 400, barH = 14, histH = 40;
+      // ヒストグラム(表示中の石の値で集計)
+      const NBINS = 24;
+      const counts = new Array(NBINS).fill(0);
+      const span = L.vmax - L.vmin;
+      for (const item of items) {
+        const row = attributesByMesh.get(item.mesh.uuid);
+        if (!row) continue;
+        const v = Number(row[L.attr]);
+        if (!Number.isFinite(v)) continue;
+        const t = span === 0 ? 0.5 : Math.max(0, Math.min(1, (v - L.vmin) / span));
+        counts[Math.min(NBINS - 1, Math.floor(t * NBINS))]++;
+      }
+      const maxCount = Math.max(...counts, 1);
+      const binW = barW / NBINS;
+      for (let b = 0; b < NBINS; b++) {
+        const h = counts[b] / maxCount * histH;
+        const binMid = L.vmin + span * ((b + 0.5) / NBINS);
+        const rgb = numericToColor(binMid, L.vmin, L.vmax, L.preset, L.cLow, L.cHigh, L.useMid, L.cMid, L.invert);
+        const fill = counts[b] === 0 ? "#dddddd" : rgbToCss(rgb);
+        parts.push(`<rect x="${(lx + b * binW).toFixed(1)}" y="${(ly + 8 + histH - h).toFixed(1)}" width="${(binW - 1).toFixed(1)}" height="${Math.max(h, 0.5).toFixed(1)}" fill="${fill}"/>`);
+      }
+      // グラデーションバー
+      const stops = [];
+      for (let i = 0; i <= 10; i++) {
+        const rgb = numericToColor(L.vmin + span * (i / 10), L.vmin, L.vmax, L.preset, L.cLow, L.cHigh, L.useMid, L.cMid, L.invert);
+        stops.push(`<stop offset="${i * 10}%" stop-color="${rgbToCss(rgb)}"/>`);
+      }
+      parts.push(`<defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="0">${stops.join("")}</linearGradient></defs>`);
+      parts.push(`<rect x="${lx}" y="${ly + 12 + histH}" width="${barW}" height="${barH}" fill="url(#grad)"/>`);
+      parts.push(`<text x="${lx}" y="${ly + 12 + histH + barH + 16}" font-size="12" fill="#222222">${Number(L.vmin.toPrecision(5))}</text>`);
+      parts.push(`<text x="${lx + barW}" y="${ly + 12 + histH + barH + 16}" font-size="12" fill="#222222" text-anchor="end">${Number(L.vmax.toPrecision(5))}</text>`);
+    } else {
+      // カテゴリ凡例
+      let cy2 = ly + 12;
+      for (const [cat, rgb] of Object.entries(categoryColorCache)) {
+        parts.push(`<rect x="${lx}" y="${cy2}" width="12" height="12" fill="${rgbToCss(rgb)}"/>`);
+        parts.push(`<text x="${lx + 18}" y="${cy2 + 11}" font-size="12" fill="#222222">${esc(cat || "(空欄)")}</text>`);
+        cy2 += 18;
+      }
+    }
+  }
+
+  // --- スケールバー(右下) ---
+  {
+    // モデル幅の1/6程度に近い「切りの良い長さ」を選ぶ
+    const targetLen = spanX / 6;
+    const candidates = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
+    let barLen = candidates[0];
+    for (const c of candidates) {
+      if (Math.abs(c - targetLen) < Math.abs(barLen - targetLen)) barLen = c;
+    }
+    const barPx = barLen * scale;
+    const bx = svgW - margin - barPx;
+    const by = contentH + margin * 2 + 40;
+    parts.push(`<line x1="${bx}" y1="${by}" x2="${bx + barPx}" y2="${by}" stroke="#222222" stroke-width="2"/>`);
+    parts.push(`<line x1="${bx}" y1="${by - 5}" x2="${bx}" y2="${by + 5}" stroke="#222222" stroke-width="2"/>`);
+    parts.push(`<line x1="${bx + barPx}" y1="${by - 5}" x2="${bx + barPx}" y2="${by + 5}" stroke="#222222" stroke-width="2"/>`);
+    parts.push(`<text x="${bx + barPx / 2}" y="${by - 10}" font-size="12" fill="#222222" text-anchor="middle">${barLen} m</text>`);
+  }
+
+  parts.push(`</svg>`);
+
+  const blob = new Blob([parts.join("\n")], { type: "image/svg+xml;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "elevation.svg";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus(`立面図SVGを書き出しました: ${items.length} オブジェクト`);
+}
+
+document.getElementById("export-svg-btn").addEventListener("click", exportElevationSVG);
+
+/* ============================================================
+   ID振り直し(立面図ビューで左下から順に採番する)
+   ・SVG立面図と同じ投影(平均法線を水平化した正面視)を使う
+   ・オブジェクトを段(高さ帯)ごとにグループ化し、
+     下の段から・段内は左から右へ 1, 2, 3... と振り直す
+   ・メッシュ名・属性テーブルのID列も同時に更新する
+============================================================ */
+function renumberIds() {
+  if (meshes.length === 0 || attributesByMesh.size === 0) {
+    setStatus("先にモデルの読み込みと色分けを済ませてください。", true);
+    return;
+  }
+
+  // --- 立面図と同じ投影基底を計算(表裏判定もSVGと同じルール) ---
+  const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+  const avgN = new THREE.Vector3();
+  let refNormal = null;
+  const items = [];
+
+  for (const entry of meshes) {
+    const pos = entry.mesh.geometry.getAttribute("position");
+    if (!pos || pos.count < 3) continue;
+    let nx = 0, ny = 0, nz = 0;
+    for (let i = 0; i < pos.count; i++) {
+      tmpA.fromBufferAttribute(pos, i);
+      tmpB.fromBufferAttribute(pos, (i + 1) % pos.count);
+      nx += (tmpA.y - tmpB.y) * (tmpA.z + tmpB.z);
+      ny += (tmpA.z - tmpB.z) * (tmpA.x + tmpB.x);
+      nz += (tmpA.x - tmpB.x) * (tmpA.y + tmpB.y);
+    }
+    const n = new THREE.Vector3(nx, ny, nz);
+    if (n.lengthSq() > 1e-12) {
+      n.normalize();
+      if (Math.abs(n.y) > 0.05) { if (n.y < 0) n.negate(); }
+      else if (refNormal && n.dot(refNormal) < 0) n.negate();
+      if (refNormal === null) refNormal = n.clone();
+      avgN.add(n);
+    }
+    items.push(entry);
+  }
+  if (items.length === 0) return;
+
+  const N = new THREE.Vector3(avgN.x, 0, avgN.z);
+  if (N.lengthSq() < 1e-9) N.set(0, 0, 1);
+  N.normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3().crossVectors(up, N).normalize();
+
+  // --- 各オブジェクトの重心と高さ(投影後)を求める ---
+  const projected = [];
+  for (const entry of items) {
+    const pos = entry.mesh.geometry.getAttribute("position");
+    let cx = 0, cy = 0, minSy = Infinity, maxSy = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      tmpA.fromBufferAttribute(pos, i);
+      const sx = tmpA.dot(right), sy = tmpA.dot(up);
+      cx += sx; cy += sy;
+      if (sy < minSy) minSy = sy;
+      if (sy > maxSy) maxSy = sy;
+    }
+    projected.push({ entry, sx: cx / pos.count, sy: cy / pos.count, h: maxSy - minSy });
+  }
+
+  // --- 段(高さ帯)ごとにグループ化: 下から順に、重心の高さの差が
+  //     オブジェクト高さの中央値の60%以内なら同じ段とみなす ---
+  const medianH = projected.map((p) => p.h).sort((a, b) => a - b)[Math.floor(projected.length / 2)] || 1;
+  const bandThreshold = medianH * 0.6;
+  projected.sort((a, b) => a.sy - b.sy);
+
+  const rows = [];
+  let currentRow = null, rowBaseSy = -Infinity;
+  for (const p of projected) {
+    if (currentRow === null || p.sy - rowBaseSy > bandThreshold) {
+      currentRow = [];
+      rows.push(currentRow);
+      rowBaseSy = p.sy;
+    }
+    currentRow.push(p);
+  }
+  for (const row of rows) row.sort((a, b) => a.sx - b.sx);  // 段内は左から右
+
+  // --- 新しいIDを振り、メッシュ名と属性テーブルを更新する ---
+  let newId = 1;
+  for (const row of rows) {
+    for (const p of row) {
+      const idStr = String(newId);
+      const attrRow = attributesByMesh.get(p.entry.mesh.uuid);
+      if (attrRow) {
+        const idCol = document.getElementById("id-column").value;
+        attrRow[idCol] = idStr;
+      }
+      p.entry.mesh.name = idStr;
+      p.entry.matchName = idStr;
+      newId++;
+    }
+  }
+
+  applyColorize();  // 新IDで再マッチング(ラベル・フィルタも連動更新される)
+  setStatus(`IDを振り直しました: ${newId - 1} オブジェクト(${rows.length} 段、左下から順)`);
+}
+
+document.getElementById("renumber-btn").addEventListener("click", renumberIds);
+
+/* ============================================================
+   フォトグラメトリモデル(OBJ + MTL + テクスチャ)の重ね表示
+   ・OBJ/MTLを自前でパースし、輪郭モデルと同じ原点シフトで配置する
+   ・テクスチャは最大2048pxに自動縮小してGPUメモリを守る
+   ・照明は焼き込み済みとみなし、MeshBasicMaterialで表示する
+   ・背景専用: クリック判定・色分け・GLB書き出しの対象にはならない
+============================================================ */
+
+async function loadDownscaledTexture(file, maxSize = 2048) {
+  let bmp = await createImageBitmap(file);
+  if (Math.max(bmp.width, bmp.height) > maxSize) {
+    const s = maxSize / Math.max(bmp.width, bmp.height);
+    const small = await createImageBitmap(bmp, {
+      resizeWidth: Math.round(bmp.width * s),
+      resizeHeight: Math.round(bmp.height * s),
+      resizeQuality: "medium",
+    });
+    bmp.close();
+    bmp = small;
+  }
+  // OBJのUVは左下原点。ImageBitmapはflipYが効かない環境があるため、
+  // canvasに上下反転で描き込んでからテクスチャ化する
+  const cnv = document.createElement("canvas");
+  cnv.width = bmp.width; cnv.height = bmp.height;
+  const ctx = cnv.getContext("2d");
+  ctx.translate(0, bmp.height);
+  ctx.scale(1, -1);
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
+  const tex = new THREE.CanvasTexture(cnv);
+  tex.flipY = false; // 反転済みなのでThree.js側の反転は無効化
+  return tex;
+}
+
+function disposeBackground() {
+  if (!backgroundRoot) return;
+  backgroundRoot.traverse((obj) => {
+    if (obj.isMesh) {
+      obj.geometry.dispose();
+      if (obj.material.map) obj.material.map.dispose();
+      obj.material.dispose();
+    }
+  });
+  scene.remove(backgroundRoot);
+  backgroundRoot = null;
+  document.getElementById("obj-controls").style.display = "none";
+  document.getElementById("obj-btn").classList.remove("loaded");
+  document.getElementById("obj-btn").innerHTML =
+    "フォトグラメトリモデル(背景)を重ねる<br>(.obj / .mtl / テクスチャ画像をまとめて選択)";
+}
+
+async function loadOBJSet(fileList) {
+  const files = [...fileList];
+  const objFile = files.find((f) => f.name.toLowerCase().endsWith(".obj"));
+  if (!objFile) { setStatus("OBJファイルが含まれていません。", true); return; }
+  const mtlFile = files.find((f) => f.name.toLowerCase().endsWith(".mtl"));
+  const imageFiles = new Map();
+  for (const f of files) {
+    if (/\.(png|jpe?g|webp|bmp)$/i.test(f.name)) imageFiles.set(f.name.toLowerCase(), f);
+  }
+
+  showProgress("OBJを読み込み中...", 0);
+  await nextFrame();
+  try {
+    // --- MTL: マテリアル名 → テクスチャファイル名(basename)の対応を読む ---
+    const matTex = new Map();
+    if (mtlFile) {
+      const mtlText = await mtlFile.text();
+      let cur = null;
+      for (const raw of mtlText.split(/\r?\n/)) {
+        const t = raw.trim();
+        if (t.toLowerCase().startsWith("newmtl ")) cur = t.slice(7).trim();
+        else if (cur && /^map_kd\s/i.test(t)) {
+          const p = t.split(/\s+/).pop().replace(/\\/g, "/");
+          matTex.set(cur, p.split("/").pop().toLowerCase());
+        }
+      }
+    }
+
+    const text = await objFile.text();
+    const lines = text.split("\n");
+    const totalLines = lines.length;
+
+    // --- 1周目: 頂点・UVの収集とバウンディングボックス計算 ---
+    const verts = [], uvs = [];
+    let mnx = Infinity, mny = Infinity, mnz = Infinity;
+    let mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
+    for (let i = 0; i < totalLines; i++) {
+      const line = lines[i];
+      if (line.charCodeAt(0) === 118) { // 'v'
+        if (line.charCodeAt(1) === 32) { // 'v '
+          const p = line.trim().split(/\s+/);
+          const x = +p[1], y = +p[2], z = +p[3];
+          verts.push(x, y, z);
+          if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+          if (y < mny) mny = y; if (y > mxy) mxy = y;
+          if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+        } else if (line.charCodeAt(1) === 116) { // 'vt'
+          const p = line.trim().split(/\s+/);
+          uvs.push(+p[1], +p[2]);
+        }
+      }
+      if ((i & 0x1FFFF) === 0 && i > 0) {
+        showProgress(`OBJを解析中 (1/2)... ${Math.round(i / totalLines * 100)}%`, i / totalLines * 0.35);
+        await nextFrame();
+      }
+    }
+    if (verts.length === 0) throw new Error("頂点(v行)が見つかりません");
+
+    // --- 原点シフト(DXFと共有。既にあれば再利用して位置を揃える) ---
+    let ox, oy, oz;
+    if (worldOffset.set) {
+      ox = worldOffset.x; oy = worldOffset.y; oz = worldOffset.z;
+    } else {
+      ox = (mnx + mxx) / 2; oy = (mny + mxy) / 2; oz = (mnz + mxz) / 2;
+      worldOffset.set = true;
+      worldOffset.x = ox; worldOffset.y = oy; worldOffset.z = oz;
+    }
+
+    // --- 2周目: 面をマテリアルごとに収集(Z-up → Y-up変換込み) ---
+    const groups = new Map();
+    const getGroup = (m) => {
+      if (!groups.has(m)) groups.set(m, { pos: [], uv: [] });
+      return groups.get(m);
+    };
+    let curMat = "__default__";
+    let triCount = 0;
+
+    for (let i = 0; i < totalLines; i++) {
+      const line = lines[i];
+      const c0 = line.charCodeAt(0);
+      if (c0 === 117) { // 'u' (usemtl)
+        if (line.startsWith("usemtl")) curMat = line.slice(6).trim() || "__default__";
+      } else if (c0 === 102 && line.charCodeAt(1) === 32) { // 'f '
+        const toks = line.trim().split(/\s+/);
+        const n = toks.length - 1;
+        if (n < 3) continue;
+        const g = getGroup(curMat);
+        // 各頂点トークンを (頂点index, UVindex) に分解(負のインデックスにも対応)
+        const idx = [];
+        for (let k = 1; k <= n; k++) {
+          const s = toks[k].split("/");
+          let vi = +s[0]; if (vi < 0) vi = verts.length / 3 + vi + 1;
+          let ti = (s.length > 1 && s[1] !== "") ? +s[1] : 0;
+          if (ti < 0) ti = uvs.length / 2 + ti + 1;
+          idx.push([vi, ti]);
+        }
+        // 扇形分割で三角形化
+        for (let k = 1; k < n - 1; k++) {
+          for (const [vi, ti] of [idx[0], idx[k], idx[k + 1]]) {
+            const b = (vi - 1) * 3;
+            g.pos.push(verts[b] - ox, verts[b + 2] - oz, -(verts[b + 1] - oy));
+            if (ti > 0) {
+              const t = (ti - 1) * 2;
+              g.uv.push(uvs[t], uvs[t + 1]);
+            } else {
+              g.uv.push(0, 0);
+            }
+          }
+          triCount++;
+        }
+      }
+      if ((i & 0x1FFFF) === 0 && i > 0) {
+        showProgress(`OBJを解析中 (2/2)... ${Math.round(i / totalLines * 100)}%`, 0.35 + i / totalLines * 0.4);
+        await nextFrame();
+      }
+    }
+
+    // --- メッシュ構築 ---
+    disposeBackground();
+    backgroundRoot = new THREE.Group();
+    backgroundRoot.name = "Photogrammetry";
+    const pendingTex = [];
+
+    for (const [mat, g] of groups) {
+      if (g.pos.length === 0) continue;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(g.pos), 3));
+      geometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(g.uv), 2));
+      const material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+      const texName = matTex.get(mat);
+      if (texName && imageFiles.has(texName)) {
+        pendingTex.push({ material, file: imageFiles.get(texName) });
+      } else {
+        material.color.set(0x8a8f96); // テクスチャが無い場合はグレー
+      }
+      const mesh = new THREE.Mesh(geometry, material);
+      backgroundRoot.add(mesh);
+    }
+    scene.add(backgroundRoot);
+
+    // --- テクスチャの読み込み(縮小しながら順次) ---
+    for (let i = 0; i < pendingTex.length; i++) {
+      showProgress(`テクスチャを読み込み中... ${i + 1} / ${pendingTex.length}`, 0.75 + 0.25 * i / Math.max(pendingTex.length, 1));
+      await nextFrame();
+      try {
+        const tex = await loadDownscaledTexture(pendingTex[i].file);
+        pendingTex[i].material.map = tex;
+        pendingTex[i].material.needsUpdate = true;
+      } catch (e) {
+        pendingTex[i].material.color.set(0x8a5555); // 読み込み失敗は赤茶で示す
+      }
+    }
+
+    hideProgress();
+    frameAll();
+    document.getElementById("obj-btn").classList.add("loaded");
+    document.getElementById("obj-btn").textContent = objFile.name;
+    document.getElementById("obj-controls").style.display = "block";
+    document.getElementById("dropzone-hint").classList.add("hidden");
+
+    const missing = [...matTex.values()].filter((t) => !imageFiles.has(t));
+    let msg = `背景モデルを読み込みました: ${(triCount).toLocaleString()} 三角形, テクスチャ ${pendingTex.length} 枚(2048pxに縮小)`;
+    if (missing.length) msg += `\n見つからないテクスチャ: ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? " ..." : ""}`;
+    setStatus(msg, missing.length > 0);
+  } catch (err) {
+    hideProgress();
+    setStatus("OBJの読み込みに失敗しました: " + err.message, true);
+  }
+}
+
+/* ---- 背景モデルのコントロール ---- */
+document.getElementById("obj-input").addEventListener("change", (e) => {
+  if (e.target.files.length > 0) loadOBJSet(e.target.files);
+  e.target.value = "";
+});
+document.getElementById("obj-folder-input").addEventListener("change", (e) => {
+  if (e.target.files.length > 0) loadOBJSet(e.target.files);
+  e.target.value = "";
+});
+document.getElementById("obj-opacity").addEventListener("input", (e) => {
+  const o = Number(e.target.value) / 100;
+  document.getElementById("obj-opacity-value").textContent = e.target.value + "%";
+  if (!backgroundRoot) return;
+  backgroundRoot.traverse((obj) => {
+    if (obj.isMesh) {
+      obj.material.transparent = o < 0.999;
+      obj.material.opacity = o;
+      obj.material.depthWrite = o >= 0.999;
+    }
+  });
+});
+document.getElementById("obj-visible").addEventListener("change", (e) => {
+  if (backgroundRoot) backgroundRoot.visible = e.target.checked;
+});
+document.getElementById("obj-remove").addEventListener("click", () => {
+  disposeBackground();
+  setStatus("背景モデルを削除しました。");
+});
+
 /* ドラッグ&ドロップ */
 wrap.addEventListener("dragover", (e) => { e.preventDefault(); wrap.classList.add("dragover"); });
 wrap.addEventListener("dragleave", () => wrap.classList.remove("dragover"));
 wrap.addEventListener("drop", (e) => {
   e.preventDefault();
   wrap.classList.remove("dragover");
-  const file = e.dataTransfer.files[0];
-  if (!file) return;
+  const files = [...e.dataTransfer.files];
+  if (files.length === 0) return;
+  // OBJが含まれていれば一式(obj+mtl+画像)として背景モデル読み込み
+  if (files.some((f) => f.name.toLowerCase().endsWith(".obj"))) {
+    loadOBJSet(files);
+    return;
+  }
+  const file = files[0];
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".glb") || lower.endsWith(".gltf")) loadGLBFile(file);
   else if (lower.endsWith(".dxf")) loadDXFFile(file);
@@ -1336,6 +2158,7 @@ function loadCSVText(text, displayName) {
 
       refreshAttributeOptions();
       refreshLabelContentOptions();
+      refreshFilterRuleOptions();
       document.getElementById("csv-btn").classList.add("loaded");
       document.getElementById("csv-btn").textContent = displayName;
       setStatus(`CSVを読み込みました: ${csvRows.length} 行 / 列: ${csvColumns.join(", ")}`);
@@ -1375,7 +2198,11 @@ function updateAttrDescription() {
 document.getElementById("attribute").addEventListener("change", updateAttrDescription);
 
 document.getElementById("csv-input").addEventListener("change", (e) => {
-  if (e.target.files[0]) loadCSVFile(e.target.files[0]);
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.name.toLowerCase().endsWith(".csv")) loadCSVFile(file);
+  else setStatus(`対応していないファイル形式です: ${file.name}\n(.csv を選択してください)`, true);
+  e.target.value = "";
 });
 document.getElementById("id-column").addEventListener("change", refreshAttributeOptions);
 
@@ -1537,6 +2364,7 @@ function applyColorize() {
   if (unmatched.length) msg += `\n未マッチ: ${unmatched.length} 個 (例: ${unmatched.slice(0, 5).join(", ")})`;
   setStatus(msg, unmatched.length > 0);
   hasApplied = true;
+  applyFilter();  // 色分け後にフィルタ状態を再適用
 }
 
 document.getElementById("apply-btn").addEventListener("click", applyColorize);
@@ -1565,22 +2393,202 @@ document.getElementById("reset-btn").addEventListener("click", () => {
 });
 
 /* ============================================================
+   フィルタ(任意の属性による石の除外表示)
+   ・条件は「属性 + 最小値 + 最大値」の組を複数追加できる
+   ・値が範囲外の石が除外される(空欄の側は制限なし)
+   ・attributesByMesh(マッチ済み属性)を参照して条件判定する
+============================================================ */
+const filterRules = [];  // { row, attrSel, minInput, maxInput }
+let filterTimer = null;
+
+function scheduleFilter() {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(applyFilter, 200);
+}
+
+function numericFilterColumns() {
+  const idCol = document.getElementById("id-column").value;
+  return csvColumns.filter((c) => c !== idCol && isNumericColumn(csvRows, c));
+}
+
+function addFilterRule(defaultAttr) {
+  const row = document.createElement("div");
+  row.className = "filter-rule";
+
+  const attrSel = document.createElement("select");
+  const minInput = document.createElement("input");
+  minInput.type = "text"; minInput.placeholder = "最小"; minInput.inputMode = "decimal";
+  const maxInput = document.createElement("input");
+  maxInput.type = "text"; maxInput.placeholder = "最大"; maxInput.inputMode = "decimal";
+  const removeBtn = document.createElement("button");
+  removeBtn.className = "rule-remove"; removeBtn.textContent = "✕";
+  removeBtn.title = "この条件を削除";
+
+  row.appendChild(attrSel); row.appendChild(minInput);
+  row.appendChild(maxInput); row.appendChild(removeBtn);
+  document.getElementById("filter-rules").appendChild(row);
+
+  const rule = { row, attrSel, minInput, maxInput };
+  filterRules.push(rule);
+  populateRuleOptions(rule, defaultAttr);
+
+  attrSel.addEventListener("change", scheduleFilter);
+  minInput.addEventListener("input", scheduleFilter);
+  maxInput.addEventListener("input", scheduleFilter);
+  removeBtn.addEventListener("click", () => {
+    filterRules.splice(filterRules.indexOf(rule), 1);
+    row.remove();
+    applyFilter();
+  });
+  return rule;
+}
+
+function populateRuleOptions(rule, preferred) {
+  const cols = numericFilterColumns();
+  const current = preferred || rule.attrSel.value;
+  rule.attrSel.innerHTML = "";
+  for (const c of cols) {
+    const o = document.createElement("option");
+    o.value = c; o.textContent = attrLabel(c);
+    rule.attrSel.appendChild(o);
+  }
+  if (cols.includes(current)) rule.attrSel.value = current;
+}
+
+function refreshFilterRuleOptions() {
+  for (const rule of filterRules) populateRuleOptions(rule);
+}
+
+function applyFilter() {
+  const enabled = document.getElementById("filter-enable").checked;
+  const mode = document.getElementById("filter-mode").value;
+  const excludeSelfX = document.getElementById("filter-self-intersect").checked;
+
+  // 有効な条件(最小か最大の少なくとも一方が入力されているもの)を集める
+  const activeRules = [];
+  for (const rule of filterRules) {
+    const attr = rule.attrSel.value;
+    if (!attr) continue;
+    const minStr = rule.minInput.value.trim();
+    const maxStr = rule.maxInput.value.trim();
+    const min = minStr !== "" ? Number(minStr) : null;
+    const max = maxStr !== "" ? Number(maxStr) : null;
+    if ((min !== null && Number.isFinite(min)) || (max !== null && Number.isFinite(max))) {
+      activeRules.push({ attr, min, max });
+    }
+  }
+
+  let filteredCount = 0;
+
+  for (const { mesh } of meshes) {
+    let filtered = false;
+    if (enabled) {
+      const row = attributesByMesh.get(mesh.uuid);
+      if (row) {
+        for (const rule of activeRules) {
+          const v = Number(row[rule.attr]);
+          if (!Number.isFinite(v)) continue;  // 値が無い石は除外対象にしない
+          if (rule.min !== null && Number.isFinite(rule.min) && v < rule.min) { filtered = true; break; }
+          if (rule.max !== null && Number.isFinite(rule.max) && v > rule.max) { filtered = true; break; }
+        }
+        if (!filtered && excludeSelfX && Number(row["SelfIntersect"]) === 1) filtered = true;
+      }
+    }
+
+    mesh.userData.filtered = filtered;
+    if (filtered) filteredCount++;
+
+    if (filtered && mode === "hide") {
+      mesh.visible = false;
+    } else {
+      mesh.visible = true;
+      if (mesh.material && mesh.material.userData && mesh.material.userData.gac) {
+        mesh.material.transparent = filtered;
+        mesh.material.opacity = filtered ? 0.12 : 1.0;
+        mesh.material.depthWrite = !filtered;
+      }
+    }
+  }
+
+  const resultEl = document.getElementById("filter-result");
+  if (enabled) {
+    resultEl.textContent = `除外: ${filteredCount} 個 / 表示: ${meshes.length - filteredCount} 個`;
+  } else {
+    resultEl.textContent = "";
+  }
+  rebuildLabels();
+}
+
+document.getElementById("filter-enable").addEventListener("change", () => {
+  const on = document.getElementById("filter-enable").checked;
+  document.getElementById("filter-body").style.display = on ? "block" : "none";
+  // 初めて有効化したとき、条件行が無ければ1つ用意する
+  if (on && filterRules.length === 0) addFilterRule();
+  applyFilter();
+});
+document.getElementById("add-filter-rule").addEventListener("click", () => addFilterRule());
+document.getElementById("filter-mode").addEventListener("change", applyFilter);
+document.getElementById("filter-self-intersect").addEventListener("change", applyFilter);
+
+/* ============================================================
    凡例
 ============================================================ */
 function rgbToCss(rgb) {
   return `rgb(${Math.round(rgb[0] * 255)},${Math.round(rgb[1] * 255)},${Math.round(rgb[2] * 255)})`;
 }
 
+let lastLegendState = null;  // SVG書き出し時に凡例を再現するための状態
+
 function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert) {
+  lastLegendState = { attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert };
   const legend = document.getElementById("legend");
   const numDiv = document.getElementById("legend-numeric");
   const catDiv = document.getElementById("legend-cats");
-  document.getElementById("legend-title").textContent = attrLabel(attr);
   legend.style.display = "block";
+
+  // 現在の属性の全値を集める(統計・ヒストグラム用)
+  const values = [];
+  for (const row of csvRows) {
+    const v = (row[attr] ?? "").toString().trim();
+    if (v === "") continue;
+    if (numericMode) {
+      const n = Number(v);
+      if (Number.isFinite(n)) values.push(n);
+    } else {
+      values.push(v);
+    }
+  }
+  document.getElementById("legend-title").textContent =
+    `${attrLabel(attr)}  n=${values.length}`;
 
   if (numericMode) {
     numDiv.style.display = "block";
     catDiv.style.display = "none";
+
+    // --- ヒストグラム(グラデーションバーと横位置が対応、ビンは実際の色で着色) ---
+    const histDiv = document.getElementById("legend-hist");
+    histDiv.innerHTML = "";
+    const NBINS = 24;
+    const counts = new Array(NBINS).fill(0);
+    const span = vmax - vmin;
+    for (const n of values) {
+      const t = span === 0 ? 0.5 : Math.max(0, Math.min(1, (n - vmin) / span));
+      counts[Math.min(NBINS - 1, Math.floor(t * NBINS))]++;
+    }
+    const maxCount = Math.max(...counts, 1);
+    for (let b = 0; b < NBINS; b++) {
+      const binLo = vmin + span * (b / NBINS);
+      const binHi = vmin + span * ((b + 1) / NBINS);
+      const binMid = (binLo + binHi) / 2;
+      const rgb = numericToColor(binMid, vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert);
+      const bin = document.createElement("div");
+      bin.className = "hist-bin";
+      bin.style.height = counts[b] === 0 ? "1px" : (counts[b] / maxCount * 42).toFixed(1) + "px";
+      bin.style.background = counts[b] === 0 ? "var(--panel-edge)" : rgbToCss(rgb);
+      bin.title = `${Number(binLo.toPrecision(4))} 〜 ${Number(binHi.toPrecision(4))}: ${counts[b]}個`;
+      histDiv.appendChild(bin);
+    }
+
     const stops = [];
     for (let i = 0; i <= 10; i++) {
       const rgb = numericToColor(vmin + (vmax - vmin) * (i / 10), vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert);
@@ -1593,6 +2601,9 @@ function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid
     numDiv.style.display = "none";
     catDiv.style.display = "flex";
     catDiv.innerHTML = "";
+    // カテゴリごとの個数を数える
+    const catCounts = {};
+    for (const v of values) catCounts[v] = (catCounts[v] || 0) + 1;
     for (const [cat, rgb] of Object.entries(categoryColorCache)) {
       const item = document.createElement("div");
       item.className = "cat-item";
@@ -1600,7 +2611,7 @@ function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid
       sw.className = "cat-swatch";
       sw.style.background = rgbToCss(rgb);
       const label = document.createElement("span");
-      label.textContent = cat || "(空欄)";
+      label.textContent = `${cat || "(空欄)"} (${catCounts[cat] || 0})`;
       item.appendChild(sw); item.appendChild(label);
       catDiv.appendChild(item);
     }
@@ -1613,6 +2624,7 @@ function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let downPos = null;
+let lastTapTime = 0, lastTapPos = null;
 
 canvas.addEventListener("pointerdown", (e) => { downPos = [e.clientX, e.clientY]; });
 canvas.addEventListener("pointerup", (e) => {
@@ -1621,6 +2633,22 @@ canvas.addEventListener("pointerup", (e) => {
   const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]);
   downPos = null;
   if (moved > 4 || meshes.length === 0) return;
+
+  // ダブルクリック / ダブルタップ判定: クリック地点を回転中心にする
+  const now = performance.now();
+  if (lastTapPos && now - lastTapTime < 350 &&
+      Math.hypot(e.clientX - lastTapPos[0], e.clientY - lastTapPos[1]) < 24) {
+    const rect0 = canvas.getBoundingClientRect();
+    const sp = new THREE.Vector2(
+      ((e.clientX - rect0.left) / rect0.width) * 2 - 1,
+      -((e.clientY - rect0.top) / rect0.height) * 2 + 1
+    );
+    retargetPivot(sp);
+    lastTapTime = 0; lastTapPos = null;
+    return;
+  }
+  lastTapTime = now;
+  lastTapPos = [e.clientX, e.clientY];
 
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1688,6 +2716,7 @@ function rebuildLabels() {
   const center = new THREE.Vector3();
 
   for (const { mesh, matchName } of meshes) {
+    if (!mesh.visible || mesh.userData.filtered) continue;  // フィルタで除外された石にはラベルを出さない
     const row = attributesByMesh.get(mesh.uuid);
     const lines = [];
 
@@ -1849,77 +2878,188 @@ function loadSampleData() {
     seed = (seed * 1664525 + 1013904223) % 4294967296;
     return seed / 4294967296;
   };
+  const randRange = (a, b) => a + rand() * (b - a);
 
-  const group = new THREE.Group();
-  group.name = "SampleWall";
-  const rows = 6, cols = 8;
-  const cell = 1.0;
-  const csvLines = ["ID,Area,Width,Height"];
+  /* Rodriguesの回転公式: ベクトルvを単位軸axisまわりにang回転する */
+  const rotVec = (v, axis, ang) => {
+    const c = Math.cos(ang), s = Math.sin(ang);
+    const [ax, ay, az] = axis, [vx, vy, vz] = v;
+    const dot = ax * vx + ay * vy + az * vz;
+    return [
+      vx * c + (ay * vz - az * vy) * s + ax * dot * (1 - c),
+      vy * c + (az * vx - ax * vz) * s + ay * dot * (1 - c),
+      vz * c + (ax * vy - ay * vx) * s + az * dot * (1 - c),
+    ];
+  };
+
+  /* ---- 石垣の壁面を生成する(座標はDXFと同じZ-up、後でY-upに変換) ----
+     ・壁はX方向に伸び、Z方向に高さを持つ
+     ・実際の石垣のように約18度後傾させる(登るほど+Y側に引っ込む)
+     ・下段ほど大きな石、目地は千鳥に食い違い
+     ・各石にわずかな面内回転と面外の傾きを与える(RectAngle/Tiltに分布が出る) */
+  const batter = 18 * Math.PI / 180;                 // 後傾角
+  const U0 = [1, 0, 0];                              // 壁面の水平方向
+  const V0 = [0, Math.sin(batter), Math.cos(batter)]; // 壁面の登り方向(後傾)
+  const N0 = [0, Math.cos(batter), -Math.sin(batter)]; // 壁面の法線
+
+  const wallLength = 7.0;
+  const gap = 0.008;                                 // 目地の幅
+  const nCourses = 6;
+
+  const contours = [];  // { id, verts:[[x,y,z],...] }
   let id = 1;
+  let tBottom = 0;      // 現在の段の下端(面内の登り方向の座標)
 
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      // セルの中に、頂点をジッターさせた不整形の凸多角形を作る
-      const cx = c * cell, cy = r * cell;
-      const nVerts = 5 + Math.floor(rand() * 3); // 5〜7角形
-      const pts = [];
+  for (let course = 0; course < nCourses; course++) {
+    // 下段ほど高い段(大きい石)、上段ほど低い段
+    const courseHeight = randRange(0.55, 0.62) - course * 0.045;
+    // 千鳥の食い違い: 段ごとに開始位置をずらす
+    let sPos = -(0.15 + rand() * 0.35);
+
+    while (sPos < wallLength) {
+      const stoneW = Math.min(randRange(0.55, 0.95) - course * 0.04, wallLength - sPos + 0.3);
+      if (stoneW < 0.2) break;
+      const stoneH = courseHeight;
+
+      // 石の中心(面内座標)
+      const sc = sPos + stoneW / 2;
+      const tc = tBottom + stoneH / 2;
+
+      // 石ごとの座標系: 面内回転(±12度) + 面外の傾き(±6度)
+      const inPlaneRot = randRange(-12, 12) * Math.PI / 180;
+      const outAxisAng = rand() * Math.PI * 2;
+      const outTilt = randRange(-6, 6) * Math.PI / 180;
+      const outAxis = [
+        U0[0] * Math.cos(outAxisAng) + V0[0] * Math.sin(outAxisAng),
+        U0[1] * Math.cos(outAxisAng) + V0[1] * Math.sin(outAxisAng),
+        U0[2] * Math.cos(outAxisAng) + V0[2] * Math.sin(outAxisAng),
+      ];
+      const U = rotVec(U0, outAxis, outTilt);
+      const V = rotVec(V0, outAxis, outTilt);
+      const N = rotVec(N0, outAxis, outTilt);
+
+      // 不整形の凸多角形(5〜7角形)を石のサイズに合わせて生成
+      const nVerts = 5 + Math.floor(rand() * 3);
+      const halfW = stoneW / 2 - gap, halfH = stoneH / 2 - gap;
+      const verts = [];
+      const cosR = Math.cos(inPlaneRot), sinR = Math.sin(inPlaneRot);
       for (let i = 0; i < nVerts; i++) {
-        const angle = (i / nVerts) * Math.PI * 2 + rand() * 0.35;
-        const radius = cell * (0.32 + rand() * 0.14);
-        pts.push(new THREE.Vector2(
-          cx + Math.cos(angle) * radius,
-          cy + Math.sin(angle) * radius * 0.85
-        ));
+        const angle = (i / nVerts) * Math.PI * 2 + rand() * 0.4;
+        const rr = 0.93 + rand() * 0.07;
+        let ls = Math.cos(angle) * halfW * rr;
+        let lt = Math.sin(angle) * halfH * rr;
+        // 面内回転を適用
+        let rs = ls * cosR - lt * sinR;
+        let rt = ls * sinR + lt * cosR;
+        // 回転で頂点がセル境界を超えないようにクランプ(隣の石との重なり防止)
+        rs = Math.max(-halfW, Math.min(halfW, rs));
+        rt = Math.max(-halfH, Math.min(halfH, rt));
+        // 面外の微小ノイズ(完全平面ではない、実データらしさ)
+        const noise = (rand() - 0.5) * 0.012;
+        verts.push([
+          sc * U0[0] + tc * V0[0] + rs * U[0] + rt * V[0] + noise * N[0],
+          sc * U0[1] + tc * V0[1] + rs * U[1] + rt * V[1] + noise * N[1],
+          sc * U0[2] + tc * V0[2] + rs * U[2] + rt * V[2] + noise * N[2],
+        ]);
       }
-
-      const shape = new THREE.Shape(pts);
-      const geometry = new THREE.ShapeGeometry(shape);
-      const mesh = new THREE.Mesh(
-        geometry,
-        new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, side: THREE.DoubleSide })
-      );
-      mesh.name = String(id);
-      group.add(mesh);
-
-      // 属性計算: 面積(靴ひも公式)とバウンディングボックスの幅・高さ
-      let area = 0;
-      for (let i = 0; i < pts.length; i++) {
-        const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
-        area += p1.x * p2.y - p2.x * p1.y;
-      }
-      area = Math.abs(area) / 2;
-      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
-      const width = Math.max(...xs) - Math.min(...xs);
-      const height = Math.max(...ys) - Math.min(...ys);
-      csvLines.push(`${id},${area.toFixed(6)},${width.toFixed(4)},${height.toFixed(4)}`);
+      contours.push({ id: String(id), verts });
       id++;
+      sPos += stoneW + gap * 2;
     }
+    tBottom += courseHeight + gap * 2;
   }
 
-  // --- モデルをシーンに設置 ---
+  /* ---- DXFと同じ計算経路で属性を求め、メッシュを構築する ---- */
+  const group = new THREE.Group();
+  group.name = "SampleIshigaki";
+  meshes = [];
   if (modelRoot) scene.remove(modelRoot);
   originalMaterials.clear();
+
+  // モデルの中心を原点に寄せる
+  let mnx = Infinity, mny = Infinity, mnz = Infinity, mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
+  for (const c of contours) for (const [px, py, pz] of c.verts) {
+    mnx = Math.min(mnx, px); mxx = Math.max(mxx, px);
+    mny = Math.min(mny, py); mxy = Math.max(mxy, py);
+    mnz = Math.min(mnz, pz); mxz = Math.max(mxz, pz);
+  }
+  const ox = (mnx + mxx) / 2, oy = (mny + mxy) / 2, oz = (mnz + mxz) / 2;
+
+  const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle,Flatness,SelfIntersect,X,Y,Z,SrcID"];
+  for (const contour of contours) {
+    const attrs = computeContourAttributes(contour.verts);
+    if (!attrs) continue;
+    const shapeVecs = attrs.pts2d.map((p) => new THREE.Vector2(p[0], p[1]));
+    let triangles;
+    try { triangles = THREE.ShapeUtils.triangulateShape(shapeVecs, []); }
+    catch (e) { continue; }
+
+    const positions = new Float32Array(contour.verts.length * 3);
+    for (let i = 0; i < contour.verts.length; i++) {
+      positions[i * 3] = contour.verts[i][0] - ox;
+      positions[i * 3 + 1] = contour.verts[i][2] - oz;   // Z-up -> Y-up
+      positions[i * 3 + 2] = -(contour.verts[i][1] - oy);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setIndex(triangles.flat());
+    geometry.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide })
+    );
+    mesh.name = contour.id;
+    mesh.userData.isContour = true;  // 頂点順序が輪郭そのもの(SVG書き出し対象)
+    group.add(mesh);
+    meshes.push({ mesh, matchName: contour.id });
+    originalMaterials.set(mesh.uuid, mesh.material);
+
+    let gx = 0, gy = 0, gz = 0;
+    for (const p of contour.verts) { gx += p[0]; gy += p[1]; gz += p[2]; }
+    gx /= contour.verts.length; gy /= contour.verts.length; gz /= contour.verts.length;
+
+    csvLines.push(
+      `${contour.id},${attrs.width.toFixed(4)},${attrs.height.toFixed(4)},` +
+      `${attrs.area.toFixed(6)},${attrs.fillRate.toFixed(4)},${attrs.tilt.toFixed(2)},` +
+      `${attrs.rectAngle.toFixed(2)},${attrs.flatness.toFixed(4)},${attrs.selfIntersect},` +
+      `${gx.toFixed(4)},${gy.toFixed(4)},${gz.toFixed(4)},${contour.id}`
+    );
+  }
+
   modelRoot = group;
   scene.add(modelRoot);
-  meshes = [];
-  modelRoot.traverse((obj) => {
-    if (obj.isMesh) {
-      meshes.push({ mesh: obj, matchName: obj.name });
-      originalMaterials.set(obj.uuid, obj.material);
-    }
-  });
   frameAll();
   updateDistanceValueText();
   document.getElementById("dropzone-hint").classList.add("hidden");
-  document.getElementById("glb-btn").classList.add("loaded");
-  document.getElementById("glb-btn").textContent = "(内蔵サンプル) 48枚のパネル";
+  document.getElementById("sample-badge").classList.add("active");
+  document.getElementById("sample-badge").textContent = `サンプルデータを表示中(${meshes.length} オブジェクト)`;
+  document.getElementById("export-glb-btn").disabled = false;
+      document.getElementById("export-svg-btn").disabled = false;
 
   // --- CSVも読み込み、少し待ってから自動で色分けを実行 ---
-  loadCSVText(csvLines.join("\n"), "(内蔵サンプル) sample.csv");
+  loadCSVText(csvLines.join("\n"), "サンプルの自動計算属性");
+  document.getElementById("attr-source-state").textContent =
+    "✓ サンプルの自動計算属性を使用中";
+  document.getElementById("attr-source-state").style.color = "var(--accent)";
   setTimeout(() => {
     document.getElementById("apply-btn").click();
-    setStatus("サンプルデータを表示中です。\n自分のGLB/CSVを読み込むと置き換わります。");
+    renumberIds();  // IDを立面図の左下から自動採番
+    setStatus("サンプルデータ(石垣)を表示中です。\n自分のDXF/GLBを読み込むと置き換わります。");
   }, 100);
+}
+
+/* ============================================================
+   サイドパネルのアコーディオン(ステップの開閉)
+   ・ヘッダークリックで開閉。初期状態は「1. モデル」「3. 色分け」のみ展開
+============================================================ */
+{
+  const steps = [...document.querySelectorAll("#sidebar .step")];
+  steps.forEach((step, i) => {
+    const label = step.querySelector(".step-label");
+    label.addEventListener("click", () => step.classList.toggle("collapsed"));
+    if (i !== 0 && i !== 2) step.classList.add("collapsed");  // 1と3以外は初期折りたたみ
+  });
 }
 
 /* ============================================================
