@@ -521,21 +521,36 @@
 
   <!-- STEP 4: フィルタ -->
   <div class="step">
+<<<<<<< HEAD
     <div class="step-label">4. フィルタで絞り込む</div>
+=======
+    <div class="step-label">4. フィルタ</div>
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
     <div class="row">
       <label class="checkbox-row"><input type="checkbox" id="filter-enable"> フィルタを有効にする</label>
     </div>
     <div id="filter-body" style="display:none">
       <div class="row">
+<<<<<<< HEAD
         <label class="small">除外条件(値が範囲外のオブジェクトを除外)</label>
+=======
+        <label class="small">条件(属性の範囲外を除外)</label>
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
         <div id="filter-rules"></div>
         <button class="ghost" id="add-filter-rule" style="margin-top:4px">＋ 条件を追加</button>
       </div>
       <div class="row">
+<<<<<<< HEAD
         <label class="checkbox-row"><input type="checkbox" id="filter-self-intersect"> 自己交差しているオブジェクトを除外</label>
       </div>
       <div class="row">
         <label class="small" for="filter-mode">除外したオブジェクトの表示</label>
+=======
+        <label class="checkbox-row"><input type="checkbox" id="filter-self-intersect"> 自己交差した輪郭を除外</label>
+      </div>
+      <div class="row">
+        <label class="small" for="filter-mode">除外したものの表示</label>
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
         <select id="filter-mode">
           <option value="ghost">半透明で表示</option>
           <option value="hide">完全に非表示</option>
@@ -547,7 +562,11 @@
 
   <!-- STEP 5: ラベル -->
   <div class="step">
+<<<<<<< HEAD
     <div class="step-label">5. ラベルを表示する</div>
+=======
+    <div class="step-label">5. ラベル表示</div>
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
     <div class="row">
       <label class="checkbox-row"><input type="checkbox" id="show-labels"> オブジェクトの位置に属性を表示</label>
     </div>
@@ -572,7 +591,11 @@
 
   <!-- STEP 5: 書き出し -->
   <div class="step">
+<<<<<<< HEAD
     <div class="step-label">6. 書き出す</div>
+=======
+    <div class="step-label">6. 書き出し</div>
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
     <div class="row">
       <button class="ghost" id="download-csv-btn" disabled style="margin-top:0">属性をCSVで保存</button>
     </div>
@@ -824,10 +847,13 @@ const ATTR_INFO = {
   RectAngle: { jp: "矩形回転角", desc: "外接矩形の水平辺が面内の水平基準から回転している角度。反時計回り(右上がり)がプラス" },
   Flatness:  { jp: "平面性",   desc: "フィット平面からの最大ズレ距離。大きいほど平面近似の信頼性が低い" },
   SelfIntersect: { jp: "自己交差", desc: "輪郭の辺同士が交差していれば1、正常なら0。1の輪郭は計算結果が信頼できない可能性がある" },
+<<<<<<< HEAD
   X: { jp: "重心X", desc: "輪郭の重心のX座標(原点シフト前の元の座標値)" },
   Y: { jp: "重心Y", desc: "輪郭の重心のY座標(原点シフト前の元の座標値)" },
   Z: { jp: "重心Z", desc: "輪郭の重心のZ座標=標高(原点シフト前の元の座標値)" },
   SrcID: { jp: "元ID", desc: "読み込み時のID(DXFのレイヤー名由来)。自動採番で振り直される前の値" },
+=======
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
 };
 
 function attrLabel(col) {
@@ -1330,7 +1356,11 @@ function loadDXFFile(file) {
       modelRoot = new THREE.Group();
       modelRoot.name = "DXF";
       meshes = [];
+<<<<<<< HEAD
       const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle,Flatness,SelfIntersect,X,Y,Z,SrcID"];
+=======
+      const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle,Flatness,SelfIntersect"];
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
       let failed = 0;
 
       const CHUNK = 200;
@@ -1382,8 +1412,12 @@ function loadDXFFile(file) {
           csvLines.push(
             `${id},${attrs.width.toFixed(4)},${attrs.height.toFixed(4)},` +
             `${attrs.area.toFixed(6)},${attrs.fillRate.toFixed(4)},${attrs.tilt.toFixed(2)},` +
+<<<<<<< HEAD
             `${attrs.rectAngle.toFixed(2)},${attrs.flatness.toFixed(4)},${attrs.selfIntersect},` +
             `${gx.toFixed(4)},${gy.toFixed(4)},${gz.toFixed(4)},${id}`
+=======
+            `${attrs.rectAngle.toFixed(2)},${attrs.flatness.toFixed(4)},${attrs.selfIntersect}`
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
           );
         }
         showProgress(`属性を計算中... ${end.toLocaleString()} / ${total.toLocaleString()}`, end / total);
@@ -2417,9 +2451,15 @@ function addFilterRule(defaultAttr) {
 
   const attrSel = document.createElement("select");
   const minInput = document.createElement("input");
+<<<<<<< HEAD
   minInput.type = "text"; minInput.placeholder = "最小"; minInput.inputMode = "decimal";
   const maxInput = document.createElement("input");
   maxInput.type = "text"; maxInput.placeholder = "最大"; maxInput.inputMode = "decimal";
+=======
+  minInput.type = "text"; minInput.placeholder = "最小";
+  const maxInput = document.createElement("input");
+  maxInput.type = "text"; maxInput.placeholder = "最大";
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
   const removeBtn = document.createElement("button");
   removeBtn.className = "rule-remove"; removeBtn.textContent = "✕";
   removeBtn.title = "この条件を削除";
@@ -2903,7 +2943,11 @@ function loadSampleData() {
   const N0 = [0, Math.cos(batter), -Math.sin(batter)]; // 壁面の法線
 
   const wallLength = 7.0;
+<<<<<<< HEAD
   const gap = 0.008;                                 // 目地の幅
+=======
+  const gap = 0.025;                                 // 目地の幅
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
   const nCourses = 6;
 
   const contours = [];  // { id, verts:[[x,y,z],...] }
@@ -2945,6 +2989,7 @@ function loadSampleData() {
       const cosR = Math.cos(inPlaneRot), sinR = Math.sin(inPlaneRot);
       for (let i = 0; i < nVerts; i++) {
         const angle = (i / nVerts) * Math.PI * 2 + rand() * 0.4;
+<<<<<<< HEAD
         const rr = 0.93 + rand() * 0.07;
         let ls = Math.cos(angle) * halfW * rr;
         let lt = Math.sin(angle) * halfH * rr;
@@ -2954,6 +2999,14 @@ function loadSampleData() {
         // 回転で頂点がセル境界を超えないようにクランプ(隣の石との重なり防止)
         rs = Math.max(-halfW, Math.min(halfW, rs));
         rt = Math.max(-halfH, Math.min(halfH, rt));
+=======
+        const rr = 0.82 + rand() * 0.18;
+        let ls = Math.cos(angle) * halfW * rr;
+        let lt = Math.sin(angle) * halfH * rr;
+        // 面内回転を適用
+        const rs = ls * cosR - lt * sinR;
+        const rt = ls * sinR + lt * cosR;
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
         // 面外の微小ノイズ(完全平面ではない、実データらしさ)
         const noise = (rand() - 0.5) * 0.012;
         verts.push([
@@ -2985,7 +3038,11 @@ function loadSampleData() {
   }
   const ox = (mnx + mxx) / 2, oy = (mny + mxy) / 2, oz = (mnz + mxz) / 2;
 
+<<<<<<< HEAD
   const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle,Flatness,SelfIntersect,X,Y,Z,SrcID"];
+=======
+  const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle,Flatness,SelfIntersect"];
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
   for (const contour of contours) {
     const attrs = computeContourAttributes(contour.verts);
     if (!attrs) continue;
@@ -3010,11 +3067,15 @@ function loadSampleData() {
       new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide })
     );
     mesh.name = contour.id;
+<<<<<<< HEAD
     mesh.userData.isContour = true;  // 頂点順序が輪郭そのもの(SVG書き出し対象)
+=======
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
     group.add(mesh);
     meshes.push({ mesh, matchName: contour.id });
     originalMaterials.set(mesh.uuid, mesh.material);
 
+<<<<<<< HEAD
     let gx = 0, gy = 0, gz = 0;
     for (const p of contour.verts) { gx += p[0]; gy += p[1]; gz += p[2]; }
     gx /= contour.verts.length; gy /= contour.verts.length; gz /= contour.verts.length;
@@ -3024,6 +3085,12 @@ function loadSampleData() {
       `${attrs.area.toFixed(6)},${attrs.fillRate.toFixed(4)},${attrs.tilt.toFixed(2)},` +
       `${attrs.rectAngle.toFixed(2)},${attrs.flatness.toFixed(4)},${attrs.selfIntersect},` +
       `${gx.toFixed(4)},${gy.toFixed(4)},${gz.toFixed(4)},${contour.id}`
+=======
+    csvLines.push(
+      `${contour.id},${attrs.width.toFixed(4)},${attrs.height.toFixed(4)},` +
+      `${attrs.area.toFixed(6)},${attrs.fillRate.toFixed(4)},${attrs.tilt.toFixed(2)},` +
+      `${attrs.rectAngle.toFixed(2)},${attrs.flatness.toFixed(4)},${attrs.selfIntersect}`
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
     );
   }
 
@@ -3032,6 +3099,7 @@ function loadSampleData() {
   frameAll();
   updateDistanceValueText();
   document.getElementById("dropzone-hint").classList.add("hidden");
+<<<<<<< HEAD
   document.getElementById("sample-badge").classList.add("active");
   document.getElementById("sample-badge").textContent = `サンプルデータを表示中(${meshes.length} オブジェクト)`;
   document.getElementById("export-glb-btn").disabled = false;
@@ -3039,13 +3107,25 @@ function loadSampleData() {
 
   // --- CSVも読み込み、少し待ってから自動で色分けを実行 ---
   loadCSVText(csvLines.join("\n"), "サンプルの自動計算属性");
+=======
+  document.getElementById("glb-btn").classList.add("loaded");
+  document.getElementById("glb-btn").textContent = `(内蔵サンプル) 石垣 ${meshes.length}石`;
+  document.getElementById("export-glb-btn").disabled = false;
+
+  // --- CSVも読み込み、少し待ってから自動で色分けを実行 ---
+  loadCSVText(csvLines.join("\n"), "(内蔵サンプル) ishigaki_sample.csv");
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
   document.getElementById("attr-source-state").textContent =
     "✓ サンプルの自動計算属性を使用中";
   document.getElementById("attr-source-state").style.color = "var(--accent)";
   setTimeout(() => {
     document.getElementById("apply-btn").click();
+<<<<<<< HEAD
     renumberIds();  // IDを立面図の左下から自動採番
     setStatus("サンプルデータ(石垣)を表示中です。\n自分のDXF/GLBを読み込むと置き換わります。");
+=======
+    setStatus("石垣のサンプルデータを表示中です。\n自分のDXF/GLBを読み込むと置き換わります。");
+>>>>>>> 05c090d219a47f09fb00f1ad87a553235c36a113
   }, 100);
 }
 
