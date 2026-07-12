@@ -477,9 +477,9 @@
     <div class="row">
       <label class="small" for="preset">配色</label>
       <select id="preset">
-        <option value="BLUE_RED">青 → 赤</option>
-        <option value="GREEN_RED">緑 → 赤</option>
-        <option value="BLUE_YELLOW">青 → 黄</option>
+        <option value="RED_BLUE">赤 → 青</option>
+        <option value="RED_GREEN">赤 → 緑</option>
+        <option value="YELLOW_BLUE">黄 → 青</option>
         <option value="GRAYSCALE">グレースケール</option>
         <option value="CUSTOM">カスタム</option>
       </select>
@@ -489,9 +489,9 @@
     </div>
     <div class="row" id="custom-colors" style="display:none">
       <div class="color-row">
-        <input type="color" id="color-low" value="#1a4ce6" title="開始色(最小値)">
+        <input type="color" id="color-low" value="#e61a1a" title="開始色(最小値)">
         <input type="color" id="color-mid" value="#ffffff" title="中間色" style="display:none">
-        <input type="color" id="color-high" value="#e61a1a" title="終了色(最大値)">
+        <input type="color" id="color-high" value="#1a4ce6" title="終了色(最大値)">
       </div>
       <div style="margin-top:8px">
         <label class="checkbox-row"><input type="checkbox" id="use-mid"> 中間色を使う</label>
@@ -2286,7 +2286,7 @@ function lerpColor(a, b, t) {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
-const HUE_RANGES = { BLUE_RED: [0.66, 0.0], GREEN_RED: [0.33, 0.0], BLUE_YELLOW: [0.66, 0.16] };
+const HUE_RANGES = { RED_BLUE: [0.0, 0.66], RED_GREEN: [0.0, 0.33], YELLOW_BLUE: [0.16, 0.66] };
 
 function numericToColor(value, vmin, vmax, preset, cLow, cHigh, useMid, cMid, invert) {
   let t = vmax === vmin ? 0.5 : Math.max(0, Math.min(1, (value - vmin) / (vmax - vmin)));
@@ -2298,7 +2298,7 @@ function numericToColor(value, vmin, vmax, preset, cLow, cHigh, useMid, cMid, in
     return lerpColor(cLow, cHigh, t);
   }
   if (preset === "GRAYSCALE") return [t, t, t];
-  const [h0, h1] = HUE_RANGES[preset] || HUE_RANGES.BLUE_RED;
+  const [h0, h1] = HUE_RANGES[preset] || HUE_RANGES.RED_BLUE;
   return hsvToRgb(h0 + (h1 - h0) * t, 0.85, 0.95);
 }
 
