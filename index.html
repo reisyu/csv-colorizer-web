@@ -1126,11 +1126,12 @@ function nextFrame() {
        FillRate       : 矩形充填率 = Area / (Width * Height)
 ============================================================ */
 
-function parseDXF(text) {
+async function parseDXF(text, onProgress) {
   const lines = text.split(/\r?\n/);
   const polylines = [];
   let current = null;
   let x = 0, y = 0;
+  const totalPairs = lines.length;
 
   for (let i = 0; i + 1 < lines.length; i += 2) {
     const code = lines[i].trim();
@@ -1147,6 +1148,11 @@ function parseDXF(text) {
       else if (code === "10") x = parseFloat(value);
       else if (code === "20") y = parseFloat(value);
       else if (code === "30") current.verts.push([x, y, parseFloat(value)]);
+    }
+    // 大規模ファイルでUIが固まらないよう、定期的にブラウザへ制御を返す
+    if (onProgress && (i & 0x3FFFF) === 0 && i > 0) {
+      onProgress(i / totalPairs);
+      await nextFrame();
     }
   }
   return polylines;
@@ -1214,6 +1220,8 @@ function minAreaRect2D(hull) {
 function computeContourAttributes(verts) {
   // フィット平面の基底(法線 + 面内の直交2軸)
   const normal = newellNormal(verts);
+  // 法線がゼロに退化した輪郭(面積が完全に相殺する自己交差など)は計算不能として扱う
+  if (normal[0] === 0 && normal[1] === 0 && normal[2] === 0) return null;
   let ref = Math.abs(normal[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0];
   const dot = ref[0] * normal[0] + ref[1] * normal[1] + ref[2] * normal[2];
   let u = [ref[0] - normal[0] * dot, ref[1] - normal[1] * dot, ref[2] - normal[2] * dot];
@@ -1312,7 +1320,10 @@ function computeContourAttributes(verts) {
     if (d > flatness) flatness = d;
   }
 
-  // 自己交差: 投影した2D輪郭で、隣接しない辺同士が交差していないか判定
+  // 自己交差: 投影した2D輪郭で、離れた辺同士が交差していないか判定する。
+  // フォトグラメトリ由来の輪郭は平面投影で近接辺の微小な交差(ノイズ)が
+  // 多発するため(実データで88%が該当)、リング距離が近い辺同士は除外し、
+  // 構造的な交差(蝶ネクタイ型など)のみを検出する
   const segIntersect = (a, b, c, d) => {
     const cr = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
     const d1 = cr(c, d, a), d2 = cr(c, d, b), d3 = cr(a, b, c), d4 = cr(a, b, d);
@@ -1320,10 +1331,12 @@ function computeContourAttributes(verts) {
   };
   let selfIntersect = 0;
   const np = pts2d.length;
+  const K = Math.max(1, Math.min(3, Math.floor(np / 6)));  // 除外する近接範囲(隣接辺は常に除外)
   outer:
   for (let i = 0; i < np; i++) {
     for (let j = i + 2; j < np; j++) {
-      if (i === 0 && j === np - 1) continue; // 最初と最後の辺は隣接扱い
+      const ringDist = Math.min(j - i, np - (j - i));
+      if (ringDist <= K) continue;
       if (segIntersect(pts2d[i], pts2d[(i + 1) % np], pts2d[j], pts2d[(j + 1) % np])) {
         selfIntersect = 1;
         break outer;
@@ -1343,16 +1356,21 @@ function loadDXFFile(file) {
       // パース自体はテキスト走査1回なので同期でも比較的速いが、
       // 直前にプログレスを描画させるため1フレーム待つ
       await nextFrame();
-      const contours = parseDXF(reader.result);
+      const contours = await parseDXF(reader.result, (ratio) => {
+        showProgress(`DXFを解析中... ${Math.round(ratio * 100)}%`, ratio * 0.3);
+      });
       if (contours.length === 0) {
         hideProgress();
         setStatus("DXFから閉じたポリライン(オブジェクトの輪郭)が見つかりませんでした。", true);
         return;
       }
 
-      // --- 原点シフト量を決める(背景モデルと共有。既にあれば再利用して位置を揃える) ---
+      // --- 原点シフト量を決める ---
+      // 背景モデルが表示中の場合のみ既存のシフト量を再利用して位置を揃える。
+      // それ以外は新しいDXFの中心で再計算する(別の場所のデータを読み込んだとき、
+      // 古いシフト量のせいでfloat32精度が崩れるのを防ぐ)
       let ox, oy, oz;
-      if (worldOffset.set) {
+      if (worldOffset.set && backgroundRoot) {
         ox = worldOffset.x; oy = worldOffset.y; oz = worldOffset.z;
       } else {
         let minX = Infinity, minY = Infinity, minZ = Infinity;
@@ -1912,25 +1930,20 @@ document.getElementById("renumber-btn").addEventListener("click", renumberIds);
 ============================================================ */
 
 async function loadDownscaledTexture(file, maxSize = 2048) {
-  let bmp = await createImageBitmap(file);
-  if (Math.max(bmp.width, bmp.height) > maxSize) {
-    const s = maxSize / Math.max(bmp.width, bmp.height);
-    const small = await createImageBitmap(bmp, {
-      resizeWidth: Math.round(bmp.width * s),
-      resizeHeight: Math.round(bmp.height * s),
-      resizeQuality: "medium",
-    });
-    bmp.close();
-    bmp = small;
-  }
-  // OBJのUVは左下原点。ImageBitmapはflipYが効かない環境があるため、
-  // canvasに上下反転で描き込んでからテクスチャ化する
+  // createImageBitmapのリサイズオプションはSafari(iPad)で未対応のため、
+  // 縮小と上下反転はcanvasのdrawImageで行う(全ブラウザ互換)
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, maxSize / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * scale));
+  const h = Math.max(1, Math.round(bmp.height * scale));
+
+  // OBJのUVは左下原点なので上下反転して描き込む
   const cnv = document.createElement("canvas");
-  cnv.width = bmp.width; cnv.height = bmp.height;
+  cnv.width = w; cnv.height = h;
   const ctx = cnv.getContext("2d");
-  ctx.translate(0, bmp.height);
+  ctx.translate(0, h);
   ctx.scale(1, -1);
-  ctx.drawImage(bmp, 0, 0);
+  ctx.drawImage(bmp, 0, 0, w, h);
   bmp.close();
   const tex = new THREE.CanvasTexture(cnv);
   tex.flipY = false; // 反転済みなのでThree.js側の反転は無効化
