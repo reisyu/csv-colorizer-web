@@ -17,6 +17,20 @@
     --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
     --sans: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Segoe UI", system-ui, sans-serif;
   }
+  body.light {
+    --bg: #eef0f3;
+    --panel: #ffffff;
+    --panel-edge: #d5d9df;
+    --ink: #1d2024;
+    --ink-dim: #68707a;
+    --accent: #1f8a7d;
+    --accent-dim: #9fd6cd;
+  }
+  body.light .obj-label { background: rgba(255, 255, 255, 0.82); }
+  body.light #legend { background: rgba(255, 255, 255, 0.92); }
+  body.light #inspector { background: rgba(255, 255, 255, 0.94); }
+  body.light #sample-badge { background: rgba(255, 255, 255, 0.88); }
+  body.light #viewport-wrap.dragover::after { background: rgba(255, 255, 255, 0.7); }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; }
   body {
@@ -43,6 +57,7 @@
     letter-spacing: 0.04em;
     margin-bottom: 2px;
   }
+  #app-version { color: var(--ink-dim); opacity: 0.7; font-size: 10px; }
   #sidebar .subtitle {
     font-size: 11px;
     color: var(--ink-dim);
@@ -71,6 +86,18 @@
     color: var(--ink-dim);
     font-size: 10px;
     transition: transform 0.15s;
+  }
+  .step-label .step-sum {
+    margin-left: auto;
+    margin-right: 8px;
+    color: var(--ink-dim);
+    font-weight: 400;
+    font-size: 10px;
+    letter-spacing: 0;
+    max-width: 55%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .step.collapsed .step-label { margin-bottom: 0; }
   .step.collapsed .step-label::after { transform: rotate(-90deg); }
@@ -256,6 +283,28 @@
   }
   #sample-badge.active { display: block; }
 
+  /* 視点プリセットとテーマ切替は右上に横並びでまとめる(インスペクタはこの下に出る) */
+  #view-toolbar {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+    display: flex;
+    gap: 6px;
+    z-index: 5;
+  }
+  #view-toolbar button {
+    background: rgba(33, 36, 42, 0.88);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    color: var(--ink-dim);
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #view-toolbar button:hover { color: var(--ink); border-color: var(--accent-dim); }
+  body.light #view-toolbar button { background: rgba(255, 255, 255, 0.88); }
+
   /* ---------- プログレス表示 ---------- */
   #progress-overlay {
     position: absolute;
@@ -378,25 +427,33 @@
   #inspector {
     position: absolute;
     right: 16px;
-    top: 16px;
+    top: 54px;            /* 右上のツールバーと重ならない位置 */
     background: rgba(33,36,42,.94);
     border: 1px solid var(--panel-edge);
     border-radius: 6px;
     padding: 10px 12px;
     font-size: 12px;
     font-family: var(--mono);
-    max-width: 260px;
+    max-width: 360px;
+    max-height: calc(100% - 70px);
+    overflow: auto;
     display: none;
   }
   #inspector .insp-name {
     color: var(--accent);
     font-weight: 700;
     margin-bottom: 6px;
-    word-break: break-all;
+    white-space: nowrap;
   }
   #inspector table { border-collapse: collapse; width: 100%; }
-  #inspector td { padding: 1px 0; vertical-align: top; word-break: break-all; }
-  #inspector td:first-child { color: var(--ink-dim); padding-right: 10px; white-space: nowrap; }
+  /* 値も属性名も折り返さない。極端に長いテキスト値だけ末尾を省略する */
+  #inspector td { padding: 1px 0; vertical-align: top; white-space: nowrap; }
+  #inspector td:first-child { color: var(--ink-dim); padding-right: 10px; }
+  #inspector td:last-child {
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   @media (max-width: 700px) {
     body { flex-direction: column; }
@@ -409,7 +466,7 @@
 
 <aside id="sidebar">
   <h1>Geometry Attribute Colorizer</h1>
-  <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー</div>
+  <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー <span id="app-version"></span></div>
 
   <div id="status" style="margin-bottom:12px">モデル(GLB / DXF)を読み込んで開始してください。</div>
 
@@ -513,15 +570,40 @@
       </div>
       <button class="ghost" id="autofill-range-btn" style="margin-top:8px">現在の最小・最大を取得</button>
     </div>
+    <div class="row" id="cat-top-only-row">
+      <label class="checkbox-row"><input type="checkbox" id="cat-top-only"> テキスト属性は上位7カテゴリのみ色分け(残りは「その他」)</label>
+    </div>
     <div class="row">
       <button class="action" id="apply-btn" disabled>色分けを実行</button>
       <button class="ghost" id="reset-btn" disabled>色をリセット</button>
     </div>
   </div>
 
-  <!-- STEP 4: フィルタ -->
+  <!-- STEP 4: 傾きライン -->
   <div class="step">
-    <div class="step-label">4. フィルタで絞り込む</div>
+    <div class="step-label">4. 傾きラインを描画する</div>
+    <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
+      各オブジェクトの外接矩形の水平軸に沿った中心線を、矩形回転角に応じた色で描画します。線が水平に揃っていれば整った積み方、乱れていればランダムな積み方だと読み取れます
+    </div>
+    <div class="row">
+      <label class="checkbox-row"><input type="checkbox" id="show-rect-lines"> 傾きラインを表示</label>
+    </div>
+    <div class="row">
+      <label class="small">線の色(0° / ±45°)</label>
+      <div class="color-row">
+        <input type="color" id="line-color-center" value="#2456e6" title="中央色(回転角0° = 水平)">
+        <input type="color" id="line-color-edge" value="#e62222" title="両端色(回転角±45°)">
+      </div>
+    </div>
+    <div class="row">
+      <label class="small" for="line-width">線の太さ <span id="line-width-value" class="slider-value">50mm</span></label>
+      <input type="range" id="line-width" min="20" max="100" step="5" value="50">
+    </div>
+  </div>
+
+  <!-- STEP 5: フィルタ -->
+  <div class="step">
+    <div class="step-label">5. フィルタで絞り込む</div>
     <div class="row">
       <label class="checkbox-row"><input type="checkbox" id="filter-enable"> フィルタを有効にする</label>
     </div>
@@ -547,7 +629,7 @@
 
   <!-- STEP 5: ラベル -->
   <div class="step">
-    <div class="step-label">5. ラベルを表示する</div>
+    <div class="step-label">6. ラベルを表示する</div>
     <div class="row">
       <label class="checkbox-row"><input type="checkbox" id="show-labels"> オブジェクトの位置に属性を表示</label>
     </div>
@@ -572,12 +654,24 @@
 
   <!-- STEP 5: 書き出し -->
   <div class="step">
-    <div class="step-label">6. 書き出す</div>
+    <div class="step-label">7. 書き出す</div>
     <div class="row">
       <button class="ghost" id="download-csv-btn" disabled style="margin-top:0">属性をCSVで保存</button>
     </div>
     <div class="row">
       <button class="ghost" id="export-glb-btn" disabled style="margin-top:0">ID付きGLBで保存</button>
+    </div>
+    <div class="row">
+      <label class="small">立面図SVGに含める要素</label>
+      <label class="checkbox-row"><input type="checkbox" id="svg-inc-legend" checked> 凡例(ヒストグラム付き)</label>
+      <label class="checkbox-row"><input type="checkbox" id="svg-inc-scalebar" checked> スケールバー</label>
+      <label class="checkbox-row"><input type="checkbox" id="svg-inc-labels"> ラベル(内容はステップ6の選択に従う)</label>
+      <label class="checkbox-row"><input type="checkbox" id="svg-inc-lines"> 傾きライン(色・太さはステップ4の設定に従う)</label>
+      <label class="checkbox-row"><input type="checkbox" id="svg-no-fill"> 塗りつぶしなし(輪郭線のみの線画にする)</label>
+    </div>
+    <div class="row">
+      <label class="small" for="svg-outline-width">オブジェクトの輪郭線の太さ(mm実寸。0で輪郭線なし)</label>
+      <input type="text" id="svg-outline-width" inputmode="decimal" value="10">
     </div>
     <div class="row">
       <button class="ghost" id="export-svg-btn" disabled style="margin-top:0">立面図をSVGで保存</button>
@@ -596,6 +690,11 @@
   <div id="labels"></div>
   <div id="dropzone-hint">ファイルをここにドロップ(GLB / DXF / OBJ / CSV)</div>
   <div id="sample-badge">サンプルデータを表示中</div>
+  <div id="view-toolbar">
+    <button id="view-front" title="モデルの正面(立面図SVGと同じ向き)から見る">正面</button>
+    <button id="view-fit" title="モデル全体が収まるようにズームする">全体</button>
+    <button id="theme-toggle" title="背景色の切り替え">☀ ライト</button>
+  </div>
 
   <div id="progress-overlay">
     <div id="progress-box">
@@ -647,7 +746,7 @@ const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.35);
 dirLight2.position.set(-5, -3, -4);
 scene.add(dirLight2);
 
-const grid = new THREE.GridHelper(20, 20, 0x33373f, 0x24272d);
+let grid = new THREE.GridHelper(20, 20, 0x33373f, 0x24272d);
 scene.add(grid);
 
 /* ---- 簡易オービットコントロール(回転・ズーム・パン) ---- */
@@ -845,6 +944,8 @@ let meshes = [];                 // {mesh, matchName} の配列
 let csvRows = [];                // CSVの行(オブジェクトの配列)
 let csvColumns = [];             // 列名
 let originalMaterials = new Map(); // mesh.uuid -> 元マテリアル
+const APP_VERSION = "1.0.0";     // リリース時に更新する(CHANGELOG.mdと対応)
+
 let labelEntries = [];           // ラベル { el, worldPos } の配列(定義はラベルセクション)
 let modelSize = 10;              // モデル全体のサイズ(距離カリングの基準に使う)
 let backgroundRoot = null;       // フォトグラメトリ等の背景モデル
@@ -873,6 +974,7 @@ const ATTR_INFO = {
   Y: { jp: "重心Y", desc: "輪郭の重心のY座標(原点シフト前の元の座標値)" },
   Z: { jp: "重心Z", desc: "輪郭の重心のZ座標=標高(原点シフト前の元の座標値)" },
   SrcID: { jp: "元ID", desc: "読み込み時のID(DXFのレイヤー名由来)。自動採番で振り直される前の値" },
+  Course: { jp: "段", desc: "立面図で下から数えた段(コース)番号。ID自動採番時の段判定に基づく" },
 };
 
 function attrLabel(col) {
@@ -1034,6 +1136,7 @@ function loadGLBFile(file) {
       if (!bin) throw new Error("BINチャンクが見つかりません(外部バッファ参照の.gltfは未対応です。.glb形式で書き出してください)");
 
       if (modelRoot) scene.remove(modelRoot);
+      setHighlight(null);
       originalMaterials.clear();
       modelRoot = buildSceneFromGLTF(json, bin);
       scene.add(modelRoot);
@@ -1060,6 +1163,7 @@ function loadGLBFile(file) {
       document.getElementById("export-glb-btn").disabled = false;
       document.getElementById("export-svg-btn").disabled = false;
       setStatus(`GLBを読み込みました: ${meshes.length} メッシュ`);
+      updateStepSummaries();
       updateApplyEnabled();
     } catch (err) {
       setStatus("GLBの読み込みに失敗しました: " + err.message, true);
@@ -1068,16 +1172,73 @@ function loadGLBFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
+/* 全体表示のフィット計算(リセンタリング付き)。
+   現在の視線方向でバウンディングボックスが余白5%で収まるように、
+   カメラ距離に加えて「画面内方向の平行移動量」も求める。
+   透視投影では斜め視点で占有範囲が視線軸に対して非対称になるため、
+   距離を詰めるだけでは奥側に大きな余白が残る。平行移動で余白を
+   左右・上下均等に再配分する(Blender等のCAD系ビューワーと同じ考え方)。
+   実装: 距離dを二分探索し、各dで「全8頂点を収める平行移動が存在するか」
+   (=実行可能区間が空でないか)を判定する */
+function fitView(box, forward, margin = 0.05) {
+  const center = box.getCenter(new THREE.Vector3());
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3().crossVectors(forward, worldUp);
+  if (right.lengthSq() < 1e-9) right.set(1, 0, 0);  // 真上/真下から見ている場合
+  right.normalize();
+  const camUp = new THREE.Vector3().crossVectors(right, forward).normalize();
+
+  const tanV = Math.tan((camera.fov * Math.PI / 180) / 2) * (1 - 2 * margin);
+  const tanH = Math.tan((camera.fov * Math.PI / 180) / 2) * camera.aspect * (1 - 2 * margin);
+
+  // 8頂点のカメラ基底成分
+  const pts = [];
+  const c = new THREE.Vector3();
+  let rad = 0;
+  for (let i = 0; i < 8; i++) {
+    c.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
+    c.sub(center);
+    pts.push({ u: c.dot(right), v: c.dot(camUp), f: c.dot(forward) });
+    rad = Math.max(rad, c.length());
+  }
+
+  // 距離dで全頂点を収める平行移動(su, sv)の実行可能区間を求める
+  function feasible(d) {
+    let loU = -Infinity, hiU = Infinity, loV = -Infinity, hiV = Infinity;
+    for (const p of pts) {
+      const z = d + p.f;
+      if (z <= 1e-9) return null;  // 頂点がカメラの後ろに来る距離は不可
+      loU = Math.max(loU, p.u - z * tanH); hiU = Math.min(hiU, p.u + z * tanH);
+      loV = Math.max(loV, p.v - z * tanV); hiV = Math.min(hiV, p.v + z * tanV);
+    }
+    if (loU > hiU || loV > hiV) return null;
+    return { su: (loU + hiU) / 2, sv: (loV + hiV) / 2 };  // 区間中央=余白が対称
+  }
+
+  // 二分探索(上限は外接球フィットの距離。必ず実行可能)
+  let lo = 1e-4;
+  let hi = rad / Math.sin(Math.atan(Math.min(tanV, tanH))) + rad;
+  for (let it = 0; it < 60; it++) {
+    const mid = (lo + hi) / 2;
+    if (feasible(mid)) hi = mid; else lo = mid;
+  }
+  const s = feasible(hi);
+  const target = center.clone().addScaledVector(right, s.su).addScaledVector(camUp, s.sv);
+  return { distance: hi, target };
+}
+
 function frameAll() {
   const box = new THREE.Box3();
   if (modelRoot) box.expandByObject(modelRoot);
   if (backgroundRoot) box.expandByObject(backgroundRoot);
   if (box.isEmpty()) return;
-  const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3()).length();
   modelSize = size;
-  orbit.target.copy(center);
-  orbit.spherical.radius = size * 0.9 + 0.001;
+  // 現在の視線方向(ターゲット→カメラの逆)を保ったままフィットする
+  const forward = new THREE.Vector3().setFromSpherical(orbit.spherical).normalize().negate();
+  const fit = fitView(box, forward);
+  orbit.target.copy(fit.target);
+  orbit.spherical.radius = fit.distance;
   orbit.update();
   camera.near = size / 1000;
   camera.far = size * 100;
@@ -1210,7 +1371,12 @@ function minAreaRect2D(hull) {
     const w = maxU - minU, h = maxV - minV, area = w * h;
     if (area < minArea) {
       minArea = area;
-      best = { w, h, axisU: [ux, uy], axisV: [vx, vy] };
+      // 矩形の中心(投影2D座標系での位置)も保持する
+      const cu = (minU + maxU) / 2, cv = (minV + maxV) / 2;
+      best = {
+        w, h, axisU: [ux, uy], axisV: [vx, vy],
+        center: [ux * cu + vx * cv, uy * cu + vy * cv],
+      };
     }
   }
   return best;
@@ -1293,6 +1459,7 @@ function computeContourAttributes(verts) {
   ];
   let hlen = Math.hypot(...h);
   let rectAngle;
+  let alignedWA = widthAxis;  // 符号を揃えた幅軸(中心線の描画に使う)
   if (hlen < 1e-9) {
     // 面がほぼ水平で「面内水平」が定義できない場合は角度0とする
     rectAngle = 0;
@@ -1307,11 +1474,24 @@ function computeContourAttributes(verts) {
     let wa = widthAxis.slice();
     const dotH = wa[0] * h[0] + wa[1] * h[1] + wa[2] * h[2];
     if (dotH < 0) wa = [-wa[0], -wa[1], -wa[2]];
+    alignedWA = wa;
     const compH = wa[0] * h[0] + wa[1] * h[1] + wa[2] * h[2];
     const compV = wa[0] * vv[0] + wa[1] * vv[1] + wa[2] * vv[2];
     // 反時計回り(面内上向き成分が正)をプラスにする
     rectAngle = Math.atan2(compV, compH) * 180 / Math.PI;
   }
+
+  // 中心線(傾きライン): 外接矩形の水平寄りの軸に沿った、矩形中心を通る線分の3D端点。
+  // 矩形回転角の可視化(石の「通り」の分析)に使う
+  const rcx = cx + u[0] * rect.center[0] + v[0] * rect.center[1];
+  const rcy = cy + u[1] * rect.center[0] + v[1] * rect.center[1];
+  const rcz = cz + u[2] * rect.center[0] + v[2] * rect.center[1];
+  const halfW = width / 2;
+  const rectLine = {
+    a: [rcx - alignedWA[0] * halfW, rcy - alignedWA[1] * halfW, rcz - alignedWA[2] * halfW],
+    b: [rcx + alignedWA[0] * halfW, rcy + alignedWA[1] * halfW, rcz + alignedWA[2] * halfW],
+    n: normal.slice(),  // 面の法線(描画時に面から浮かせるために使う)
+  };
 
   // 平面性: フィット平面(重心を通る)からの最大ズレ距離
   let flatness = 0;
@@ -1344,7 +1524,7 @@ function computeContourAttributes(verts) {
     }
   }
 
-  return { width, height, area, fillRate, tilt, rectAngle, flatness, selfIntersect, pts2d };
+  return { width, height, area, fillRate, tilt, rectAngle, flatness, selfIntersect, rectLine, pts2d };
 }
 
 function loadDXFFile(file) {
@@ -1389,6 +1569,7 @@ function loadDXFFile(file) {
 
       // --- メッシュ生成 + 属性計算(チャンク分割でUIを固めない) ---
       if (modelRoot) scene.remove(modelRoot);
+      setHighlight(null);
       originalMaterials.clear();
       modelRoot = new THREE.Group();
       modelRoot.name = "DXF";
@@ -1433,6 +1614,14 @@ function loadDXFFile(file) {
           const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial(sharedMaterialParams));
           mesh.name = id;
           mesh.userData.isContour = true;  // 頂点順序が輪郭そのもの(SVG書き出し対象)
+          // 中心線(傾きライン): Z-up→Y-up変換+原点シフトを適用して保存
+          mesh.userData.rectLine = {
+            a: [attrs.rectLine.a[0] - ox, attrs.rectLine.a[2] - oz, -(attrs.rectLine.a[1] - oy)],
+            b: [attrs.rectLine.b[0] - ox, attrs.rectLine.b[2] - oz, -(attrs.rectLine.b[1] - oy)],
+            n: attrs.rectLine.n,  // 面の法線(Z-up、描画時に変換して浮かせ方向に使う)
+            f: attrs.flatness,    // 平面からの最大ズレ(浮かせ量の計算に使う)
+            angle: attrs.rectAngle,
+          };
           modelRoot.add(mesh);
           meshes.push({ mesh, matchName: id });
           originalMaterials.set(mesh.uuid, mesh.material);
@@ -1506,6 +1695,38 @@ document.getElementById("download-csv-btn").addEventListener("click", () => {
 function exportGLB() {
   if (meshes.length === 0) return;
 
+  // --- 法線の向きを壁全体で統一するための準備 ---
+  // 各オブジェクトの面法線(傾きライン用に保存済み)を上向きルールで揃えて平均し、
+  // それと逆向きのメッシュは書き出し時に三角形の巻き順を反転する。
+  // これによりGLBを他ツールで開いたとき、全オブジェクトの法線が表側に揃う
+  const flipSet = new Set();
+  {
+    const globalN = new THREE.Vector3();
+    const tmpN = new THREE.Vector3();
+    let refN = null;
+    const perMesh = [];
+    for (const { mesh } of meshes) {
+      const rl = mesh.userData.rectLine;
+      if (!rl || !rl.n) continue;
+      const n = new THREE.Vector3(rl.n[0], rl.n[2], -rl.n[1]);  // 元の巻き順の法線
+      perMesh.push({ mesh, n });
+      tmpN.copy(n);
+      if (Math.abs(tmpN.y) > 0.05) {
+        if (tmpN.y < 0) tmpN.negate();
+      } else if (refN && tmpN.dot(refN) < 0) {
+        tmpN.negate();
+      }
+      if (refN === null) refN = tmpN.clone();
+      globalN.add(tmpN);
+    }
+    if (globalN.lengthSq() > 1e-9) {
+      globalN.normalize();
+      for (const { mesh, n } of perMesh) {
+        if (n.dot(globalN) < 0) flipSet.add(mesh.uuid);
+      }
+    }
+  }
+
   const jsonBuffers = [];   // 各メッシュのバイナリ(position, index)
   let byteOffset = 0;
   const bufferViews = [];
@@ -1556,7 +1777,17 @@ function exportGLB() {
     // インデックス
     let index = geom.getIndex();
     if (index) {
-      const arr = index.count > 65535 ? new Uint32Array(index.array) : new Uint16Array(index.array);
+      let srcArr = index.array;
+      if (flipSet.has(mesh.uuid)) {
+        // 三角形の巻き順を反転して法線の向きを揃える (a,b,c) -> (a,c,b)
+        srcArr = new srcArr.constructor(srcArr.length);
+        for (let t = 0; t < srcArr.length; t += 3) {
+          srcArr[t] = index.array[t];
+          srcArr[t + 1] = index.array[t + 2];
+          srcArr[t + 2] = index.array[t + 1];
+        }
+      }
+      const arr = index.count > 65535 ? new Uint32Array(srcArr) : new Uint16Array(srcArr);
       const compType = index.count > 65535 ? 5125 : 5123;
       const idxView = pushBufferView(arr, 34963);
       const idxAccessor = accessors.length;
@@ -1688,8 +1919,16 @@ function exportElevationSVG() {
   }
   items.sort((a, b) => a.depth - b.depth);  // 奥から手前へ描画
 
-  // レイアウト: 幅1600pxに収め、下部に凡例スペースを確保
-  const contentW = 1600, margin = 50, legendH = 130;
+  // 書き出し設定の読み取り
+  const incLegend = document.getElementById("svg-inc-legend").checked;
+  const incScalebar = document.getElementById("svg-inc-scalebar").checked;
+  const incLabels = document.getElementById("svg-inc-labels").checked;
+  const incLines = document.getElementById("svg-inc-lines").checked;
+  const outlineMM = Number(document.getElementById("svg-outline-width").value);
+
+  // レイアウト: 幅1600pxに収め、下部に凡例スペースを確保(凡例なしなら詰める)
+  const contentW = 1600, margin = 50;
+  const legendH = (incLegend || incScalebar) ? 130 : 0;
   const spanX = Math.max(maxSX - minSX, 1e-9);
   const spanY = Math.max(maxSY - minSY, 1e-9);
   const scale = contentW / spanX;
@@ -1705,14 +1944,41 @@ function exportElevationSVG() {
   parts.push(`<rect width="100%" height="100%" fill="#ffffff"/>`);
 
   // --- 石のポリゴン ---
+  const noFill = document.getElementById("svg-no-fill").checked;
+  let outlinePx = Number.isFinite(outlineMM) && outlineMM > 0
+    ? Math.max(0.2, (outlineMM / 1000) * scale) : 0;
+  // 塗りなしで輪郭線も0だと何も見えないため、線画モードでは既定の太さを使う
+  if (noFill && outlinePx <= 0) outlinePx = Math.max(0.2, (10 / 1000) * scale);
+  const strokeAttr = outlinePx > 0
+    ? `stroke="#444444" stroke-width="${outlinePx.toFixed(2)}" stroke-linejoin="round"` : `stroke="none"`;
   for (const item of items) {
-    const color = "#" + item.mesh.material.color.getHexString();
+    const fill = noFill ? "none" : "#" + item.mesh.material.color.getHexString();
     const ptsStr = item.pts.map(([sx, sy]) => `${toX(sx).toFixed(2)},${toY(sy).toFixed(2)}`).join(" ");
-    parts.push(`<polygon points="${ptsStr}" fill="${color}" stroke="#444444" stroke-width="1" stroke-linejoin="round"/>`);
+    parts.push(`<polygon points="${ptsStr}" fill="${fill}" ${strokeAttr}/>`);
   }
 
-  // --- ラベル(表示ONのときのみ) ---
-  if (showLabelsCheckbox.checked) {
+  // --- 傾きライン: 書き出し設定でONのとき ---
+  if (incLines) {
+    for (const item of items) {
+      const rl = item.mesh.userData.rectLine;
+      if (!rl) continue;
+      const ax = rl.a[0] * right.x + rl.a[1] * right.y + rl.a[2] * right.z;
+      const ay = rl.a[0] * up.x + rl.a[1] * up.y + rl.a[2] * up.z;
+      const bx = rl.b[0] * right.x + rl.b[1] * right.y + rl.b[2] * right.z;
+      const by = rl.b[0] * up.x + rl.b[1] * up.y + rl.b[2] * up.z;
+      const lc = currentLineColors();
+      const [r, g, b] = symmetricAngleColor(rl.angle, lc.center, lc.edge);
+      const col = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+      const x1 = toX(ax).toFixed(1), y1 = toY(ay).toFixed(1);
+      const x2 = toX(bx).toFixed(1), y2 = toY(by).toFixed(1);
+      // 太さはアプリの設定(mm)を実寸スケールでpxに変換する
+      const swPx = Math.max(1, (Number(document.getElementById("line-width").value) / 1000) * scale);
+      parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${swPx.toFixed(1)}" stroke-linecap="round"/>`);
+    }
+  }
+
+  // --- ラベル: 書き出し設定でONのとき(内容はステップ6の選択に従う) ---
+  if (incLabels) {
     const keys = getSelectedLabelKeys();
     const multi = keys.length > 1;
     for (const item of items) {
@@ -1738,7 +2004,7 @@ function exportElevationSVG() {
   }
 
   // --- 凡例 ---
-  if (lastLegendState) {
+  if (incLegend && lastLegendState) {
     const L = lastLegendState;
     const lx = margin, ly = contentH + margin * 2;
     parts.push(`<text x="${lx}" y="${ly}" font-size="14" fill="#222222">${esc(attrLabel(L.attr))}  n=${items.length}</text>`);
@@ -1777,18 +2043,24 @@ function exportElevationSVG() {
       parts.push(`<text x="${lx}" y="${ly + 12 + histH + barH + 16}" font-size="12" fill="#222222">${Number(L.vmin.toPrecision(5))}</text>`);
       parts.push(`<text x="${lx + barW}" y="${ly + 12 + histH + barH + 16}" font-size="12" fill="#222222" text-anchor="end">${Number(L.vmax.toPrecision(5))}</text>`);
     } else {
-      // カテゴリ凡例
+      // カテゴリ凡例(「その他」は1行に集約)
       let cy2 = ly + 12;
+      let svgOthers = 0;
       for (const [cat, rgb] of Object.entries(categoryColorCache)) {
+        if (categoryOthers.has(cat)) { svgOthers++; continue; }
         parts.push(`<rect x="${lx}" y="${cy2}" width="12" height="12" fill="${rgbToCss(rgb)}"/>`);
         parts.push(`<text x="${lx + 18}" y="${cy2 + 11}" font-size="12" fill="#222222">${esc(cat || "(空欄)")}</text>`);
         cy2 += 18;
+      }
+      if (svgOthers > 0) {
+        parts.push(`<rect x="${lx}" y="${cy2}" width="12" height="12" fill="${rgbToCss(OTHER_COLOR)}"/>`);
+        parts.push(`<text x="${lx + 18}" y="${cy2 + 11}" font-size="12" fill="#222222">その他 ${svgOthers}種</text>`);
       }
     }
   }
 
   // --- スケールバー(右下) ---
-  {
+  if (incScalebar) {
     // モデル幅の1/6程度に近い「切りの良い長さ」を選ぶ
     const targetLen = spanX / 6;
     const candidates = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
@@ -1805,6 +2077,9 @@ function exportElevationSVG() {
     parts.push(`<text x="${bx + barPx / 2}" y="${by - 10}" font-size="12" fill="#222222" text-anchor="middle">${barLen} m</text>`);
   }
 
+  // 生成情報(どの版で作った図か追跡できるようにする)
+  parts.push(`<text x="${svgW - margin}" y="${Math.ceil(svgH) - 8}" font-size="9" fill="#999999" text-anchor="end">Geometry Attribute Colorizer v${APP_VERSION}</text>`);
+
   parts.push(`</svg>`);
 
   const blob = new Blob([parts.join("\n")], { type: "image/svg+xml;charset=utf-8" });
@@ -1815,6 +2090,18 @@ function exportElevationSVG() {
   URL.revokeObjectURL(a.href);
   setStatus(`立面図SVGを書き出しました: ${items.length} オブジェクト`);
 }
+
+/* 塗りつぶしなし(線画)のときは色の凡例が意味を持たないため連動して外す */
+document.getElementById("svg-no-fill").addEventListener("change", (e) => {
+  const legendCb = document.getElementById("svg-inc-legend");
+  if (e.target.checked) {
+    legendCb.checked = false;
+    legendCb.disabled = true;
+  } else {
+    legendCb.disabled = false;
+    legendCb.checked = true;
+  }
+});
 
 document.getElementById("export-svg-btn").addEventListener("click", exportElevationSVG);
 
@@ -1901,6 +2188,7 @@ function renumberIds() {
 
   // --- 新しいIDを振り、メッシュ名と属性テーブルを更新する ---
   let newId = 1;
+  let courseNo = 1;
   for (const row of rows) {
     for (const p of row) {
       const idStr = String(newId);
@@ -1908,11 +2196,21 @@ function renumberIds() {
       if (attrRow) {
         const idCol = document.getElementById("id-column").value;
         attrRow[idCol] = idStr;
+        attrRow["Course"] = String(courseNo);  // 段(コース)番号も属性化する
       }
       p.entry.mesh.name = idStr;
       p.entry.matchName = idStr;
       newId++;
     }
+    courseNo++;
+  }
+
+  // Course列を属性一覧に登録する(色分け・フィルタ・ラベル・CSV出力の対象になる)
+  if (!csvColumns.includes("Course")) {
+    csvColumns.push("Course");
+    refreshAttributeOptions();
+    refreshLabelContentOptions();
+    refreshFilterRuleOptions();
   }
 
   applyColorize();  // 新IDで再マッチング(ラベル・フィルタも連動更新される)
@@ -2217,6 +2515,7 @@ function loadCSVText(text, displayName) {
       refreshAttributeOptions();
       refreshLabelContentOptions();
       refreshFilterRuleOptions();
+      updateStepSummaries();
       document.getElementById("csv-btn").classList.add("loaded");
       document.getElementById("csv-btn").textContent = displayName;
       setStatus(`CSVを読み込みました: ${csvRows.length} 行 / 列: ${csvColumns.join(", ")}`);
@@ -2315,14 +2614,29 @@ function numericToColor(value, vmin, vmax, preset, cLow, cHigh, useMid, cMid, in
   return hsvToRgb(h0 + (h1 - h0) * t, 0.85, 0.95);
 }
 
+/* カテゴリ用パレット(識別性の高い20色)。
+   これを超えるカテゴリ数では、色相環を黄金角(約137.5°)ずつ回して自動生成する。
+   黄金角は連続して生成した色同士が最も離れる性質があり、何色でも重複しない */
 const PALETTE = [
   [0.90, 0.20, 0.20], [0.20, 0.55, 0.90], [0.25, 0.75, 0.35], [0.95, 0.65, 0.15],
-  [0.60, 0.30, 0.80], [0.20, 0.80, 0.80], [0.85, 0.85, 0.20], [0.55, 0.55, 0.55],
+  [0.60, 0.30, 0.80], [0.20, 0.80, 0.80], [0.85, 0.75, 0.15], [0.90, 0.45, 0.65],
+  [0.55, 0.40, 0.25], [0.45, 0.85, 0.55], [0.35, 0.35, 0.85], [0.95, 0.45, 0.20],
+  [0.50, 0.70, 0.90], [0.75, 0.55, 0.85], [0.70, 0.70, 0.35], [0.30, 0.60, 0.55],
+  [0.85, 0.60, 0.50], [0.55, 0.25, 0.45], [0.40, 0.50, 0.30], [0.65, 0.65, 0.75],
 ];
+const OTHER_COLOR = [0.55, 0.55, 0.55];  // 「その他」に集約されたカテゴリの色
+function categoryColorByIndex(i) {
+  if (i < PALETTE.length) return PALETTE[i];
+  // 黄金角による自動生成(彩度・明度を交互に変えて識別性を補う)
+  const hue = (i * 0.381966) % 1;
+  const alt = i % 2 === 0;
+  return hsvToRgb(hue, alt ? 0.80 : 0.55, alt ? 0.92 : 0.75);
+}
 let categoryColorCache = {};
+let categoryOthers = new Set();  // 「その他」に集約されたカテゴリ名
 function textToColor(category) {
   if (!(category in categoryColorCache)) {
-    categoryColorCache[category] = PALETTE[Object.keys(categoryColorCache).length % PALETTE.length];
+    categoryColorCache[category] = categoryColorByIndex(Object.keys(categoryColorCache).length);
   }
   return categoryColorCache[category];
 }
@@ -2376,7 +2690,29 @@ function applyColorize() {
   }
 
   categoryColorCache = {};
+  categoryOthers = new Set();
   attributesByMesh.clear();
+
+  // テキスト属性の場合: 出現数の多い順に色を事前割り当てする。
+  // 「上位のみ色分け」がONなら、上位7カテゴリ以外は「その他」(グレー)に集約する
+  if (!numericMode) {
+    const counts = {};
+    for (const row of csvRows) {
+      const v = (row[attr] ?? "").toString().trim();
+      if (v === "") continue;
+      counts[v] = (counts[v] || 0) + 1;
+    }
+    const sorted = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+    const topOnly = document.getElementById("cat-top-only").checked;
+    sorted.forEach((cat, i) => {
+      if (topOnly && i >= 7) {
+        categoryColorCache[cat] = OTHER_COLOR;
+        categoryOthers.add(cat);
+      } else {
+        categoryColorCache[cat] = categoryColorByIndex(i);
+      }
+    });
+  }
   let matched = 0;
   const unmatched = [];
 
@@ -2428,7 +2764,7 @@ function applyColorize() {
 document.getElementById("apply-btn").addEventListener("click", applyColorize);
 
 /* 設定変更で即時反映(一度実行した後のみ有効) */
-for (const id of ["preset", "use-mid", "manual-range", "attribute", "id-prefix", "invert-gradient"]) {
+for (const id of ["preset", "use-mid", "manual-range", "attribute", "id-prefix", "invert-gradient", "cat-top-only"]) {
   document.getElementById(id).addEventListener("change", scheduleReapply);
 }
 for (const id of ["color-low", "color-mid", "color-high", "range-min", "range-max"]) {
@@ -2449,6 +2785,142 @@ document.getElementById("reset-btn").addEventListener("click", () => {
   rebuildLabels();
   setStatus("色を元に戻しました。");
 });
+
+/* ============================================================
+   傾きライン
+   ・各オブジェクトの外接矩形の水平軸に沿った中心線を描画する
+   ・色は矩形回転角の絶対値による対称グラデーション
+     (既定: 0°=青、±45°=赤。カラーピッカーで変更可能)
+   ・WebGLの制約でラインの太さは変えられないため、太さを持つ
+     細長い面(クワッド)として描画する(太さは実寸mm指定)
+   ・全クワッドを1つのメッシュにまとめる(1万個でも1ドローコール)
+============================================================ */
+let rectLinesObj = null;
+
+/* 対称グラデーション: |angle|/45 で中央色→両端色を補間(純関数) */
+function symmetricAngleColor(angle, centerRGB, edgeRGB) {
+  const t = Math.max(0, Math.min(1, Math.abs(angle) / 45));
+  return [
+    centerRGB[0] + (edgeRGB[0] - centerRGB[0]) * t,
+    centerRGB[1] + (edgeRGB[1] - centerRGB[1]) * t,
+    centerRGB[2] + (edgeRGB[2] - centerRGB[2]) * t,
+  ];
+}
+
+function currentLineColors() {
+  return {
+    center: hexToRgb01(document.getElementById("line-color-center").value),
+    edge: hexToRgb01(document.getElementById("line-color-edge").value),
+  };
+}
+
+function rebuildRectLines() {
+  if (rectLinesObj) {
+    scene.remove(rectLinesObj);
+    rectLinesObj.geometry.dispose();
+    rectLinesObj.material.dispose();
+    rectLinesObj = null;
+  }
+  if (!document.getElementById("show-rect-lines").checked) return;
+
+  const thickness = Number(document.getElementById("line-width").value) / 1000; // mm -> m
+  const { center, edge } = currentLineColors();
+
+  // --- 1周目: 壁全体の平均法線を求める(浮かせる向きの基準) ---
+  // 各石の法線は巻き方向次第で表裏が反転しているため、SVG立面図と同じ
+  // 「上向き成分が正」ルールで揃えてから平均する
+  const globalN = new THREE.Vector3();
+  const tmpN = new THREE.Vector3();
+  let refN = null;
+  for (const { mesh } of meshes) {
+    const rl = mesh.userData.rectLine;
+    if (!rl) continue;
+    tmpN.set(rl.n[0], rl.n[2], -rl.n[1]);
+    if (Math.abs(tmpN.y) > 0.05) {
+      if (tmpN.y < 0) tmpN.negate();
+    } else if (refN && tmpN.dot(refN) < 0) {
+      tmpN.negate();
+    }
+    if (refN === null) refN = tmpN.clone();
+    globalN.add(tmpN);
+  }
+  if (globalN.lengthSq() > 1e-9) globalN.normalize();
+  else globalN.set(0, 0, 1);
+
+  const positions = [];
+  const colors = [];
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), N = new THREE.Vector3();
+  const dir = new THREE.Vector3(), perp = new THREE.Vector3();
+
+  for (const { mesh } of meshes) {
+    const rl = mesh.userData.rectLine;
+    if (!rl) continue;
+    if (!mesh.visible || mesh.userData.filtered) continue;
+
+    A.fromArray(rl.a); B.fromArray(rl.b);
+    // 法線(Z-up保存値をY-upへ変換)。壁平均法線と同じ側(=表側)に揃える
+    N.set(rl.n[0], rl.n[2], -rl.n[1]);
+    if (N.dot(globalN) < 0) N.negate();
+
+    // 浮かせ量: 石の平面からの最大ズレ(Flatness) + 余裕。
+    // 石が完全な平面でなくても、うねりの最大値より外側に線が出るので埋まらない
+    const lift = (rl.f || 0) + 0.004;
+    A.addScaledVector(N, lift);
+    B.addScaledVector(N, lift);
+
+    dir.subVectors(B, A).normalize();
+    perp.crossVectors(dir, N).normalize().multiplyScalar(thickness / 2);
+
+    const [r, g, b] = symmetricAngleColor(rl.angle, center, edge);
+    // クワッド = 三角形2枚(A-perp, B-perp, B+perp / A-perp, B+perp, A+perp)
+    const ax1 = A.x - perp.x, ay1 = A.y - perp.y, az1 = A.z - perp.z;
+    const ax2 = A.x + perp.x, ay2 = A.y + perp.y, az2 = A.z + perp.z;
+    const bx1 = B.x - perp.x, by1 = B.y - perp.y, bz1 = B.z - perp.z;
+    const bx2 = B.x + perp.x, by2 = B.y + perp.y, bz2 = B.z + perp.z;
+    positions.push(
+      ax1, ay1, az1, bx1, by1, bz1, bx2, by2, bz2,
+      ax1, ay1, az1, bx2, by2, bz2, ax2, ay2, az2
+    );
+    for (let k = 0; k < 6; k++) colors.push(r, g, b);
+  }
+
+  if (positions.length === 0) {
+    setStatus("傾きラインを表示できるデータがありません(DXF/サンプルのモデルで利用できます)。", true);
+    document.getElementById("show-rect-lines").checked = false;
+    return;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
+  const material = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    // 深度オフセット: 同一平面上の石の面より常にわずかに手前として扱わせる。
+    // 面から物理的に浮かせる方式と違い、法線の向き(表裏)に依存しない
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
+  });
+  rectLinesObj = new THREE.Mesh(geometry, material);
+  rectLinesObj.renderOrder = 1;
+  scene.add(rectLinesObj);
+}
+
+document.getElementById("show-rect-lines").addEventListener("change", () => {
+  rebuildRectLines();
+  updateStepSummaries();
+});
+/* 色・太さの変更は即時反映(デバウンス付き) */
+let rectLineTimer = null;
+for (const id of ["line-color-center", "line-color-edge", "line-width"]) {
+  document.getElementById(id).addEventListener("input", () => {
+    document.getElementById("line-width-value").textContent =
+      document.getElementById("line-width").value + "mm";
+    clearTimeout(rectLineTimer);
+    rectLineTimer = setTimeout(rebuildRectLines, 150);
+  });
+}
 
 /* ============================================================
    フィルタ(任意の属性による石の除外表示)
@@ -2575,6 +3047,8 @@ function applyFilter() {
     resultEl.textContent = "";
   }
   rebuildLabels();
+  rebuildRectLines();  // フィルタ状態を傾きラインにも反映
+  updateStepSummaries();
 }
 
 document.getElementById("filter-enable").addEventListener("change", () => {
@@ -2662,7 +3136,13 @@ function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid
     // カテゴリごとの個数を数える
     const catCounts = {};
     for (const v of values) catCounts[v] = (catCounts[v] || 0) + 1;
+    let othersCount = 0, othersCats = 0;
     for (const [cat, rgb] of Object.entries(categoryColorCache)) {
+      if (categoryOthers.has(cat)) {
+        othersCount += catCounts[cat] || 0;
+        othersCats++;
+        continue;  // 「その他」に集約されたカテゴリは個別表示しない
+      }
       const item = document.createElement("div");
       item.className = "cat-item";
       const sw = document.createElement("span");
@@ -2673,7 +3153,52 @@ function updateLegend(attr, numericMode, vmin, vmax, preset, cLow, cHigh, useMid
       item.appendChild(sw); item.appendChild(label);
       catDiv.appendChild(item);
     }
+    if (othersCats > 0) {
+      const item = document.createElement("div");
+      item.className = "cat-item";
+      const sw = document.createElement("span");
+      sw.className = "cat-swatch";
+      sw.style.background = rgbToCss(OTHER_COLOR);
+      const label = document.createElement("span");
+      label.textContent = `その他 ${othersCats}種 (${othersCount})`;
+      item.appendChild(sw); item.appendChild(label);
+      catDiv.appendChild(item);
+    }
   }
+}
+
+/* ============================================================
+   選択オブジェクトのハイライト
+   ・クリックした石の輪郭を発光色の線で強調する
+   ・深度テスト無効で他の石に隠れても位置が分かる
+============================================================ */
+let highlightObj = null;
+
+function setHighlight(mesh) {
+  if (highlightObj) {
+    scene.remove(highlightObj);
+    highlightObj.geometry.dispose();
+    highlightObj.material.dispose();
+    highlightObj = null;
+  }
+  if (!mesh) return;
+
+  const material = new THREE.LineBasicMaterial({
+    color: 0xffa028,
+    depthTest: false,  // 他の石の裏に隠れても見えるようにする
+  });
+  if (mesh.userData.isContour) {
+    // 輪郭モデル: 頂点順序がそのまま輪郭なのでLineLoopで縁取る
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", mesh.geometry.getAttribute("position").clone());
+    highlightObj = new THREE.LineLoop(geometry, material);
+  } else {
+    // GLB等の三角形メッシュ: エッジ抽出で縁取る
+    const geometry = new THREE.EdgesGeometry(mesh.geometry, 30);
+    highlightObj = new THREE.LineSegments(geometry, material);
+  }
+  highlightObj.renderOrder = 999;  // 常に最前面
+  scene.add(highlightObj);
 }
 
 /* ============================================================
@@ -2715,9 +3240,14 @@ canvas.addEventListener("pointerup", (e) => {
   const hits = raycaster.intersectObjects(meshes.map((m) => m.mesh), false);
 
   const inspector = document.getElementById("inspector");
-  if (!hits.length) { inspector.style.display = "none"; return; }
+  if (!hits.length) {
+    inspector.style.display = "none";
+    setHighlight(null);  // 空クリックで選択解除
+    return;
+  }
 
   const mesh = hits[0].object;
+  setHighlight(mesh);  // 選択した石を3D上で強調表示
   const entry = meshes.find((m) => m.mesh === mesh);
   document.getElementById("insp-name").textContent = entry ? entry.matchName : mesh.name;
 
@@ -2725,10 +3255,13 @@ canvas.addEventListener("pointerup", (e) => {
   table.innerHTML = "";
   const row = attributesByMesh.get(mesh.uuid);
   if (row) {
+    const idCol = document.getElementById("id-column").value;
     for (const [k, v] of Object.entries(row)) {
+      if (k === idCol) continue;  // IDは上の見出しに表示済みなので繰り返さない
       const tr = document.createElement("tr");
       const td1 = document.createElement("td"); td1.textContent = attrLabel(k);
       const td2 = document.createElement("td"); td2.textContent = v;
+      td2.title = v;  // 省略された場合に備えて全文をツールチップで見せる
       tr.appendChild(td1); tr.appendChild(td2);
       table.appendChild(tr);
     }
@@ -2865,7 +3398,10 @@ function refreshLabelContentOptions() {
   csvColumns.filter((c) => c !== idCol).forEach((c) => makeItem(c, attrLabel(c)));
 }
 
-showLabelsCheckbox.addEventListener("change", rebuildLabels);
+showLabelsCheckbox.addEventListener("change", () => {
+  rebuildLabels();
+  updateStepSummaries();
+});
 // 初期状態のIDチェックボックスにもイベントを付ける
 labelContentList.querySelector("input")?.addEventListener("change", rebuildLabels);
 
@@ -3032,6 +3568,7 @@ function loadSampleData() {
   group.name = "SampleIshigaki";
   meshes = [];
   if (modelRoot) scene.remove(modelRoot);
+  setHighlight(null);
   originalMaterials.clear();
 
   // モデルの中心を原点に寄せる
@@ -3069,6 +3606,13 @@ function loadSampleData() {
     );
     mesh.name = contour.id;
     mesh.userData.isContour = true;  // 頂点順序が輪郭そのもの(SVG書き出し対象)
+    mesh.userData.rectLine = {
+      a: [attrs.rectLine.a[0] - ox, attrs.rectLine.a[2] - oz, -(attrs.rectLine.a[1] - oy)],
+      b: [attrs.rectLine.b[0] - ox, attrs.rectLine.b[2] - oz, -(attrs.rectLine.b[1] - oy)],
+      n: attrs.rectLine.n,  // 面の法線(Z-up、描画時に変換して浮かせ方向に使う)
+      f: attrs.flatness,    // 平面からの最大ズレ(浮かせ量の計算に使う)
+      angle: attrs.rectAngle,
+    };
     group.add(mesh);
     meshes.push({ mesh, matchName: contour.id });
     originalMaterials.set(mesh.uuid, mesh.material);
@@ -3108,16 +3652,118 @@ function loadSampleData() {
 }
 
 /* ============================================================
+   テーマ切替(ダーク / ライト)
+   ・UI全体のCSS変数と、3Dシーンの背景・グリッド色を連動して切り替える
+============================================================ */
+let isLightTheme = false;
+function applyTheme(light) {
+  isLightTheme = light;
+  document.body.classList.toggle("light", light);
+  scene.background = new THREE.Color(light ? 0xeef0f3 : 0x17191d);
+  // グリッドは色を作り直す
+  const gridY = grid.position.y;
+  scene.remove(grid);
+  grid = light
+    ? new THREE.GridHelper(20, 20, 0xc3c8cf, 0xdadee4)
+    : new THREE.GridHelper(20, 20, 0x33373f, 0x24272d);
+  grid.position.y = gridY;
+  scene.add(grid);
+  document.getElementById("theme-toggle").textContent = light ? "🌙 ダーク" : "☀ ライト";
+}
+document.getElementById("theme-toggle").addEventListener("click", () => applyTheme(!isLightTheme));
+
+/* ============================================================
+   視点プリセット
+   ・正面: 立面図SVGと同じ「平均法線を水平化した方向」から見る。
+     SVG書き出し前の目視確認に使う
+   ・全体: モデル全体が収まるようにフィットする
+============================================================ */
+function viewFront() {
+  if (meshes.length === 0) return;
+  // 傾きライン・SVGと同じルールで壁の表方向を求める
+  const globalN = new THREE.Vector3();
+  const tmpN = new THREE.Vector3();
+  let refN = null;
+  for (const { mesh } of meshes) {
+    const rl = mesh.userData.rectLine;
+    if (!rl || !rl.n) continue;
+    tmpN.set(rl.n[0], rl.n[2], -rl.n[1]);
+    if (Math.abs(tmpN.y) > 0.05) {
+      if (tmpN.y < 0) tmpN.negate();
+    } else if (refN && tmpN.dot(refN) < 0) {
+      tmpN.negate();
+    }
+    if (refN === null) refN = tmpN.clone();
+    globalN.add(tmpN);
+  }
+  const N = new THREE.Vector3(globalN.x, 0, globalN.z);
+  if (N.lengthSq() < 1e-9) N.set(0, 0, 1);
+  N.normalize();
+
+  const box = new THREE.Box3();
+  if (modelRoot) box.expandByObject(modelRoot);
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3()).length();
+  // 視線方向を確定してから、その向きでのフィット(距離+リセンタリング)を行う
+  orbit.spherical.setFromVector3(N);
+  const fit = fitView(box, N.clone().negate());
+  orbit.target.copy(fit.target);
+  orbit.spherical.radius = fit.distance;
+  orbit.update();
+  camera.near = size / 1000;
+  camera.far = size * 100;
+  camera.updateProjectionMatrix();
+}
+document.getElementById("view-front").addEventListener("click", viewFront);
+document.getElementById("view-fit").addEventListener("click", frameAll);
+
+/* ============================================================
    サイドパネルのアコーディオン(ステップの開閉)
    ・ヘッダークリックで開閉。初期状態は「1. モデル」「3. 色分け」のみ展開
 ============================================================ */
+document.getElementById("app-version").textContent = "v" + APP_VERSION;
+
+const stepSummaryEls = [];
 {
   const steps = [...document.querySelectorAll("#sidebar .step")];
   steps.forEach((step, i) => {
     const label = step.querySelector(".step-label");
+    // 折りたたみ中でも設定状態が見えるサマリー表示
+    const sum = document.createElement("span");
+    sum.className = "step-sum";
+    label.appendChild(sum);
+    stepSummaryEls.push(sum);
     label.addEventListener("click", () => step.classList.toggle("collapsed"));
-    if (i !== 0 && i !== 2) step.classList.add("collapsed");  // 1と3以外は初期折りたたみ
+    if (i !== 0 && i !== 2 && i !== 3) step.classList.add("collapsed");  // 1・3・4以外は初期折りたたみ
   });
+}
+
+/* 各ステップのヘッダーに現在の設定状態を要約表示する */
+function updateStepSummaries() {
+  if (stepSummaryEls.length < 7) return;
+  // 1. モデル
+  const glbBtn = document.getElementById("glb-btn");
+  stepSummaryEls[0].textContent = glbBtn.classList.contains("loaded")
+    ? glbBtn.textContent
+    : (meshes.length > 0 ? `サンプル ${meshes.length}個` : "");
+  // 2. 属性データ
+  stepSummaryEls[1].textContent = csvRows.length > 0 ? `${csvRows.length}行` : "";
+  // 3. 色分け
+  const attrSel = document.getElementById("attribute");
+  stepSummaryEls[2].textContent = hasApplied && attrSel.value ? attrLabel(attrSel.value) : "";
+  // 4. 傾きライン
+  stepSummaryEls[3].textContent = document.getElementById("show-rect-lines").checked ? "表示中" : "";
+  // 5. フィルタ
+  if (document.getElementById("filter-enable").checked) {
+    const m = document.getElementById("filter-result").textContent.match(/除外: (\d+)/);
+    stepSummaryEls[4].textContent = m ? `除外 ${m[1]}個` : "有効";
+  } else {
+    stepSummaryEls[4].textContent = "";
+  }
+  // 6. ラベル
+  stepSummaryEls[5].textContent = showLabelsCheckbox.checked ? "表示中" : "";
+  // 7. 書き出す
+  stepSummaryEls[6].textContent = "";
 }
 
 /* ============================================================
