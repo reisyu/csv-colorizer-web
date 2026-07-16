@@ -159,17 +159,24 @@
   button.action:disabled { opacity: 0.4; cursor: not-allowed; }
   button.ghost {
     width: 100%;
-    background: transparent;
-    color: var(--ink-dim);
-    border: 1px solid var(--panel-edge);
+    background: rgba(127, 138, 150, 0.10);   /* わずかな面の色で「押せる」ことを示す */
+    color: var(--ink);
+    border: 1px solid var(--ink-dim);
     border-radius: 4px;
     padding: 7px 8px;
     font-size: 12px;
     font-family: var(--sans);
     cursor: pointer;
     margin-top: 8px;
+    text-align: center;
+    transition: border-color .12s, background .12s;
   }
-  button.ghost:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-dim); }
+  button.ghost:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(127, 138, 150, 0.16);
+  }
+  button.ghost:active:not(:disabled) { background: rgba(127, 138, 150, 0.24); }
   button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .color-row { display: flex; gap: 8px; align-items: center; }
@@ -224,6 +231,8 @@
   }
   .filter-rule .rule-remove:hover { color: var(--warn); border-color: var(--warn); }
 
+  /* ステータスは「通知」のイディオム(左のアクセントバー)で、
+     ボタンの「押せる面」と視覚的な文法を分ける */
   #status {
     font-size: 11px;
     font-family: var(--mono);
@@ -231,12 +240,13 @@
     line-height: 1.6;
     padding: 10px 12px;
     background: var(--bg);
-    border-radius: 6px;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
     min-height: 42px;
     white-space: pre-wrap;
     word-break: break-all;
   }
-  #status.warn { color: var(--warn); }
+  #status.warn { color: var(--warn); border-left-color: var(--warn); }
 
   /* ---------- ビューポート ---------- */
   #viewport-wrap { flex: 1; position: relative; height: 100%; }
@@ -1302,10 +1312,33 @@ function nextFrame() {
        FillRate       : 矩形充填率 = Area / (Width * Height)
 ============================================================ */
 
+/* OCS→WCS変換(Arbitrary Axis Algorithm)。
+   AutoCAD/Rhinoの2Dポリラインは、押し出し方向(グループコード210/220/230)で
+   定義される独自の平面座標系(OCS)で頂点を記録する。DXF仕様の規定に従い、
+   |Nx|,|Ny| < 1/64 なら Wy×N、それ以外は Wz×N を X軸として基底を構築する */
+function ocsToWcs(verts, n) {
+  let [nx, ny, nz] = n;
+  const nl = Math.hypot(nx, ny, nz) || 1;
+  nx /= nl; ny /= nl; nz /= nl;
+  // X軸の選択: Nがワールド Z軸に近い場合は Wy×N、それ以外は Wz×N
+  let ax = (Math.abs(nx) < 1 / 64 && Math.abs(ny) < 1 / 64)
+    ? [nz, 0, -nx]     // Wy × N
+    : [-ny, nx, 0];    // Wz × N
+  const al = Math.hypot(...ax) || 1;
+  ax = [ax[0] / al, ax[1] / al, ax[2] / al];
+  const ay = [ny * ax[2] - nz * ax[1], nz * ax[0] - nx * ax[2], nx * ax[1] - ny * ax[0]];  // N × Ax
+  return verts.map(([x, y, z]) => [
+    x * ax[0] + y * ay[0] + z * nx,
+    x * ax[1] + y * ay[1] + z * ny,
+    x * ax[2] + y * ay[2] + z * nz,
+  ]);
+}
+
 async function parseDXF(text, onProgress) {
   const lines = text.split(/\r?\n/);
   const polylines = [];
   let current = null;
+  let inVertex = false;   // VERTEXエンティティの中にいるか
   let x = 0, y = 0;
   const totalPairs = lines.length;
 
@@ -1314,16 +1347,37 @@ async function parseDXF(text, onProgress) {
     const value = lines[i + 1].trim();
     if (code === "0") {
       if (value === "POLYLINE") {
-        current = { layer: "", verts: [] };
+        current = { layer: "", verts: [], ext: [0, 0, 1] };
+        inVertex = false;
+      } else if (value === "VERTEX") {
+        inVertex = true;
       } else if (value === "SEQEND") {
-        if (current && current.verts.length >= 3) polylines.push(current);
+        if (current && current.verts.length >= 3) {
+          // 押し出し方向が(0,0,1)以外の2Dポリライン(Rhino等)はOCS→WCS変換する
+          const [ex, ey, ez] = current.ext;
+          if (Math.abs(ex) > 1e-12 || Math.abs(ey) > 1e-12 || Math.abs(ez - 1) > 1e-12) {
+            current.verts = ocsToWcs(current.verts, current.ext);
+          }
+          delete current.ext;
+          polylines.push(current);
+        }
         current = null;
+        inVertex = false;
       }
     } else if (current) {
-      if (code === "8" && current.verts.length === 0) current.layer = value;
-      else if (code === "10") x = parseFloat(value);
-      else if (code === "20") y = parseFloat(value);
-      else if (code === "30") current.verts.push([x, y, parseFloat(value)]);
+      if (code === "8" && current.layer === "") current.layer = value;
+      else if (inVertex) {
+        // 頂点はVERTEXエンティティ内でのみ収集する
+        // (POLYLINEヘッダ自体にも10/20/30があるDXF(Rhino等)を誤読しないため)
+        if (code === "10") x = parseFloat(value);
+        else if (code === "20") y = parseFloat(value);
+        else if (code === "30") current.verts.push([x, y, parseFloat(value)]);
+      } else {
+        // POLYLINEヘッダ: 押し出し方向(210/220/230)のみ読む
+        if (code === "210") current.ext[0] = parseFloat(value);
+        else if (code === "220") current.ext[1] = parseFloat(value);
+        else if (code === "230") current.ext[2] = parseFloat(value);
+      }
     }
     // 大規模ファイルでUIが固まらないよう、定期的にブラウザへ制御を返す
     if (onProgress && (i & 0x3FFFF) === 0 && i > 0) {
@@ -1592,6 +1646,7 @@ function loadDXFFile(file) {
       meshes = [];
       const csvLines = ["ID,Width,Height,Area,FillRate,Tilt,RectAngle,Flatness,SelfIntersect,X,Y,Z,SrcID"];
       let failed = 0;
+      const usedIds = new Set();  // IDの一意化用(同一レイヤーのDXF対策)
 
       const CHUNK = 200;
       const total = contours.length;
@@ -1601,9 +1656,17 @@ function loadDXFFile(file) {
         const end = Math.min(start + CHUNK, total);
         for (let ci = start; ci < end; ci++) {
           const contour = contours[ci];
-          // レイヤー名の末尾の数字をIDにする(数字がなければレイヤー名そのまま)
+          // レイヤー名の末尾の数字をIDにする(数字がなければレイヤー名そのまま)。
+          // 全ポリラインが同一レイヤーのDXF(Rhino出力等)でもIDが重複しないよう、
+          // 使用済みのIDには連番を付けて一意化する(読み込み後に自動採番で振り直される)
           const m = contour.layer.match(/(\d+)\s*$/);
-          const id = m ? m[1] : contour.layer;
+          let id = m ? m[1] : contour.layer;
+          if (usedIds.has(id)) {
+            let n = 2;
+            while (usedIds.has(`${id}_${n}`)) n++;
+            id = `${id}_${n}`;
+          }
+          usedIds.add(id);
 
           const attrs = computeContourAttributes(contour.verts);
           if (!attrs) { failed++; continue; }
