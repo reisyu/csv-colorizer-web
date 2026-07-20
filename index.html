@@ -58,6 +58,17 @@
     margin-bottom: 2px;
   }
   #app-version { color: var(--ink-dim); opacity: 0.7; font-size: 10px; }
+  #help-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 10px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 4px;
+    white-space: nowrap;
+  }
+  #help-link:hover { background: var(--accent-dim); color: var(--ink); }
   #sidebar .subtitle {
     font-size: 11px;
     color: var(--ink-dim);
@@ -476,7 +487,7 @@
 
 <aside id="sidebar">
   <h1>Geometry Attribute Colorizer</h1>
-  <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー <span id="app-version"></span></div>
+  <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー <span id="app-version"></span> <a href="help.html" target="gac-help" id="help-link">? 操作ガイド</a></div>
 
   <div id="status" style="margin-bottom:12px">モデル(GLB / DXF)を読み込んで開始してください。</div>
 
@@ -814,6 +825,8 @@ function retargetPivot(screenPos) {
 }
 
 canvas.addEventListener("pointerdown", (e) => {
+  // 中ボタン(1)ドラッグでブラウザ標準のオートスクロールが発動するのを抑止する
+  if (e.button === 1) e.preventDefault();
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (activePointers.size === 2) {
     // 2本指: ピンチズーム + パンの開始
@@ -822,7 +835,8 @@ canvas.addEventListener("pointerdown", (e) => {
     pinchLastMid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
     dragMode = null;
   } else if (activePointers.size === 1) {
-    dragMode = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
+    // 右ボタン(2)・中ボタン(1)・Shift+左 は平行移動、それ以外(左)は回転
+    dragMode = (e.button === 1 || e.button === 2 || e.shiftKey) ? "pan" : "rotate";
     if (dragMode === "rotate") retargetPivot();  // 回転開始時に中心を補正
     lastX = e.clientX; lastY = e.clientY;
   }
@@ -882,6 +896,8 @@ function releasePointer(e) {
 canvas.addEventListener("pointerup", releasePointer);
 canvas.addEventListener("pointercancel", releasePointer);
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+// 中ボタンのオートスクロール(pointerdownのpreventDefaultだけでは効かない環境がある)
+canvas.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
 /* ホイールズーム: マウスカーソル位置を中心に拡大縮小する。
    カーソルの先の点Pを不動点として、カメラと回転中心の両方をPへ相似的に
    近づける/遠ざける。Pは画面上で動かないため、見たい場所へ直感的に寄れる。

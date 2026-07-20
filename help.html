@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geometry Attribute Colorizer — 操作ガイド</title>
+<style>
+  :root {
+    --bg: #17191d;
+    --panel: #21242a;
+    --panel-edge: #2e323a;
+    --ink: #e8eaed;
+    --ink-dim: #9aa0a8;
+    --accent: #57c7b8;
+    --accent-dim: #2f6d66;
+    --warn: #e0a458;
+    --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+    --sans: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Segoe UI", system-ui, sans-serif;
+  }
+  body.light {
+    --bg: #eef0f3;
+    --panel: #ffffff;
+    --panel-edge: #d5d9df;
+    --ink: #1d2024;
+    --ink-dim: #68707a;
+    --accent: #1f8a7d;
+    --accent-dim: #9fd6cd;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.75;
+    font-size: 15px;
+  }
+
+  /* ---------- レイアウト ---------- */
+  .wrap { display: flex; max-width: 1180px; margin: 0 auto; }
+  nav {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    width: 240px;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 28px 16px 40px 24px;
+    border-right: 1px solid var(--panel-edge);
+    flex: none;
+  }
+  nav .brand { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
+  nav .brand-sub { font-size: 10px; color: var(--ink-dim); margin-bottom: 20px; }
+  nav a {
+    display: block;
+    color: var(--ink-dim);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 4px 0;
+    border-left: 2px solid transparent;
+    padding-left: 10px;
+    transition: color .12s, border-color .12s;
+  }
+  nav a:hover { color: var(--ink); }
+  nav a.section { margin-top: 14px; font-weight: 700; color: var(--ink); font-size: 12px; letter-spacing: .02em; }
+  nav a.sub { padding-left: 22px; font-size: 12px; }
+
+  main { flex: 1; padding: 36px 44px 120px; min-width: 0; }
+
+  /* ---------- タイポグラフィ ---------- */
+  h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--ink-dim); font-size: 14px; margin-bottom: 8px; }
+  .version-tag { color: var(--ink-dim); opacity: 0.7; font-size: 11px; font-family: var(--mono); }
+  h2 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 44px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--panel-edge);
+    scroll-margin-top: 20px;
+  }
+  h3 { font-size: 15px; font-weight: 700; margin: 24px 0 8px; color: var(--accent); scroll-margin-top: 20px; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0 10px 24px; }
+  li { margin: 5px 0; }
+  a { color: var(--accent); }
+  strong { color: var(--ink); font-weight: 700; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+  pre {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.6; }
+
+  /* ---------- 部品 ---------- */
+  .lead {
+    color: var(--ink-dim);
+    font-size: 15px;
+    background: var(--panel);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 14px 18px;
+    margin: 16px 0 8px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin: 14px 0;
+  }
+  .card h3 { margin-top: 0; }
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+    background: var(--accent);
+    color: var(--bg);
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 700;
+    margin-right: 8px;
+    flex: none;
+  }
+  body.light .step-num { color: #fff; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--panel-edge); vertical-align: top; }
+  th { color: var(--accent); font-weight: 700; white-space: nowrap; }
+  td:first-child { white-space: nowrap; color: var(--ink); font-family: var(--mono); font-size: 0.92em; }
+  .note {
+    background: color-mix(in srgb, var(--warn) 12%, transparent);
+    border-left: 3px solid var(--warn);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 16px;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  .note strong { color: var(--warn); }
+  kbd {
+    font-family: var(--mono);
+    font-size: 0.85em;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+  .pill {
+    display: inline-block;
+    font-size: 11px;
+    font-family: var(--mono);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    border-radius: 4px;
+    padding: 1px 7px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .theme-btn {
+    position: fixed;
+    right: 20px; top: 20px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    color: var(--ink-dim);
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: var(--sans);
+    cursor: pointer;
+    z-index: 10;
+  }
+  .theme-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .back-to-app {
+    display: inline-block;
+    background: rgba(127, 138, 150, 0.10);
+    border: 1px solid var(--ink-dim);
+    border-radius: 6px;
+    color: var(--ink);
+    text-decoration: none;
+    padding: 8px 16px;
+    font-size: 14px;
+    margin-top: 18px;
+    transition: border-color .12s, color .12s;
+  }
+  .back-to-app:hover { border-color: var(--accent); color: var(--accent); }
+  footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--panel-edge);
+    color: var(--ink-dim);
+    font-size: 12px;
+  }
+
+  @media (max-width: 780px) {
+    nav { display: none; }
+    main { padding: 28px 20px 90px; }
+    .theme-btn { top: 12px; right: 12px; }
+  }
+</style>
+</head>
+<body>
+<button class="theme-btn" id="theme-btn">☀ ライト</button>
+<div class="wrap">
+
+  <nav>
+    <div class="brand">Geometry Attribute Colorizer</div>
+    <div class="brand-sub">操作ガイド</div>
+    <a href="#intro" class="section">はじめに</a>
+    <a href="#quickstart" class="section">クイックスタート</a>
+    <a href="#controls" class="section">マウス・タッチ操作</a>
+    <a href="#steps" class="section">ステップ別ガイド</a>
+    <a href="#s1" class="sub">1. モデルを読み込む</a>
+    <a href="#s2" class="sub">2. 属性データ</a>
+    <a href="#s3" class="sub">3. 色分けする</a>
+    <a href="#s4" class="sub">4. 傾きライン</a>
+    <a href="#s5" class="sub">5. フィルタ</a>
+    <a href="#s6" class="sub">6. ラベル</a>
+    <a href="#s7" class="sub">7. 書き出す</a>
+    <a href="#data" class="section">データの準備</a>
+    <a href="#export" class="section">書き出しの使い分け</a>
+    <a href="#trouble" class="section">困ったときは</a>
+  </nav>
+
+  <main>
+    <h1>Geometry Attribute Colorizer <span class="version-tag" id="ver">v1.0.0</span></h1>
+    <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー — 操作ガイド</div>
+    <a class="back-to-app" href="index.html" data-close-tab>← アプリに戻る</a>
+
+    <!-- ============ はじめに ============ -->
+    <h2 id="intro">はじめに</h2>
+    <p>
+      このツールは、石垣などの測量データを解析・可視化するためのブラウザアプリです。
+      オブジェクトの輪郭データから<strong>幅・高さ・面積・傾きなどの属性を自動計算</strong>し、
+      それらを<strong>色分けして立面図として可視化</strong>、CSV・GLB・SVGとして書き出します。
+    </p>
+    <p>
+      石垣BIMのワークフローでは、
+      <strong>①フォトグラメトリで3Dモデル化 → ②クラスタリングで石の輪郭を抽出（DXF）→
+      ③このアプリで属性計算・色分け → ④報告書用の図やデータを書き出し</strong>
+      という流れの、③④を担います。
+    </p>
+    <div class="lead">
+      すべての処理はあなたのブラウザ内で完結します。データがサーバーへ送信されることはありません。
+      インターネット接続がなくても（一度ページを開けば）動作します。
+    </div>
+
+    <!-- ============ クイックスタート ============ -->
+    <h2 id="quickstart">クイックスタート</h2>
+    <p>まず何ができるか触ってみたい場合の最短手順です。所要2〜3分。</p>
+    <div class="card">
+      <p><span class="step-num">1</span><strong>サンプルを表示する</strong></p>
+      <p>アプリを開くと、内蔵のサンプル石垣が自動で表示されます（何も読み込まなくてOK）。
+        マウスでドラッグして視点を回してみてください。</p>
+      <p style="margin-top:14px"><span class="step-num">2</span><strong>色分けする</strong></p>
+      <p>左パネルの「3. 色分けする」で属性（例: <code>Width</code>＝幅）を選ぶと、
+        オブジェクトが値に応じてグラデーション表示されます。凡例とヒストグラムが下に出ます。</p>
+      <p style="margin-top:14px"><span class="step-num">3</span><strong>傾きラインを見る</strong></p>
+      <p>「4. 傾きラインを描画する」の「傾きラインを表示」にチェックを入れると、
+        各オブジェクトに傾きを示す線が引かれます。</p>
+      <p style="margin-top:14px"><span class="step-num">4</span><strong>書き出す</strong></p>
+      <p>「7. 書き出す」で「立面図をSVGで保存」を押すと、
+        いま見えている色分け・凡例つきの立面図がベクター画像として保存されます。</p>
+    </div>
+
+    <!-- ============ 操作一覧 ============ -->
+    <h2 id="controls">マウス・タッチ操作</h2>
+    <h3>パソコン（マウス）</h3>
+    <table>
+      <tr><th>操作</th><th>動作</th></tr>
+      <tr><td>左ドラッグ</td><td>視点を回転</td></tr>
+      <tr><td>右ドラッグ / 中ドラッグ</td><td>平行移動（パン）</td></tr>
+      <tr><td>ホイール</td><td>ズーム（カーソル位置を中心に拡大縮小）</td></tr>
+      <tr><td>クリック</td><td>オブジェクトを選択（オレンジで強調表示され、属性が表示される）</td></tr>
+      <tr><td>ダブルクリック</td><td>その位置にフォーカス（注視点を移動）</td></tr>
+      <tr><td>何もない所をクリック</td><td>選択を解除</td></tr>
+    </table>
+    <h3>iPad・タッチ画面</h3>
+    <table>
+      <tr><th>操作</th><th>動作</th></tr>
+      <tr><td>1本指ドラッグ</td><td>視点を回転</td></tr>
+      <tr><td>2本指ドラッグ</td><td>平行移動（パン）</td></tr>
+      <tr><td>ピンチ</td><td>ズーム</td></tr>
+      <tr><td>タップ</td><td>オブジェクトを選択</td></tr>
+      <tr><td>ダブルタップ</td><td>その位置にフォーカス</td></tr>
+    </table>
+    <h3>ビュー右上のボタン</h3>
+    <ul>
+      <li><strong>正面</strong> — 立面図SVGと同じ向き（壁の正面）から見ます。書き出し前の構図確認に便利です。</li>
+      <li><strong>全体</strong> — モデル全体が画面に収まるように表示します。</li>
+      <li><strong>☀ ライト / 🌙 ダーク</strong> — 背景色を切り替えます。投影や印刷、スクリーンショット向け。</li>
+    </ul>
+
+    <!-- ============ ステップ別ガイド ============ -->
+    <h2 id="steps">ステップ別ガイド</h2>
+    <p>
+      左パネルは上から順に番号のついたステップになっています。
+      各ステップのタイトルをクリックすると開閉できます。
+      閉じていても、タイトル右側に現在の設定状態（例: <code>Width(幅)</code>）が薄く表示されます。
+    </p>
+
+    <h3 id="s1">1. モデルを読み込む</h3>
+    <p>
+      解析したい3Dデータを読み込みます。ボタンから選ぶか、ビューポート（右の3D表示領域）へ
+      ファイルを<strong>ドラッグ＆ドロップ</strong>しても読み込めます。
+    </p>
+    <ul>
+      <li><strong>GLB / DXF</strong> — メインのジオメトリ。DXFは読み込むと同時に属性が自動計算されます。</li>
+      <li><strong>フォトグラメトリモデル（背景）</strong> — OBJ+MTL+テクスチャ画像を重ねて表示できます。
+        位置合わせの参考にする背景用です。ファイルをまとめて選択するか、フォルダごと選択します。</li>
+      <li><strong>データ名</strong> — このデータの名前。ファイル名が自動で入りますが、
+        変更できます（例: <code>本丸東面_2026調査</code>）。この名前は書き出すCSVに記録されます
+        （<a href="#export">書き出しの使い分け</a>を参照）。</li>
+    </ul>
+    <div class="note">
+      背景モデルも重ねる場合は、<strong>DXF/GLBを先に読み込んでから</strong>背景OBJを読み込んでください。
+      先に読み込んだ方の座標を基準に位置合わせが行われます。
+    </div>
+
+    <h3 id="s2">2. 属性データ（GLB利用時）</h3>
+    <p>
+      GLBモデルに外部のCSVで属性を紐づける場合に使います。
+      CSVのID列とモデルのオブジェクト名を対応させて属性を読み込みます。
+      <strong>DXFの場合は属性が自動計算されるため、このステップは基本的に不要です。</strong>
+    </p>
+
+    <h3 id="s3">3. 色分けする</h3>
+    <p>属性の値に応じてオブジェクトに色をつけます。</p>
+    <ul>
+      <li><strong>数値属性</strong>（幅・傾きなど）— グラデーションで表示。
+        配色プリセット（赤→青など）、色の反転、範囲の手動指定ができます。</li>
+      <li><strong>テキスト属性</strong>（石材種別など）— カテゴリごとに色分け。
+        種類が多い場合は「上位7カテゴリのみ色分け」で主要なものだけを目立たせ、
+        残りをグレーの「その他」にまとめられます。</li>
+    </ul>
+    <p>属性を選ぶと自動で反映されます。凡例とヒストグラム（値の分布）が画面下に表示されます。</p>
+
+    <h3 id="s4">4. 傾きラインを描画する <span class="pill">石垣分析</span></h3>
+    <p>
+      各オブジェクトの外接矩形の<strong>水平軸に沿った中心線</strong>を描き、その傾きを線の色で表します。
+      石の水平方向の連続性が一目で分かります。
+    </p>
+    <ul>
+      <li><strong>色</strong> — 傾きに応じたグラデーション（初期設定は 0°＝青、±45°＝赤）。
+        中央色・両端色は自由に変更できます。</li>
+      <li><strong>太さ</strong> — 20〜100mm（実寸）で調整。ズームしても実際の寸法として表示されます。</li>
+    </ul>
+
+    <h3 id="s5">5. フィルタで絞り込む</h3>
+    <p>
+      条件に合うオブジェクトだけを表示（または半透明・非表示）にします。
+      「幅が0.5m以上」「自己交差している輪郭を除外」など、数値属性に対する範囲条件を
+      複数組み合わせられます（すべての条件を満たすものが対象）。
+    </p>
+
+    <h3 id="s6">6. ラベルを表示する</h3>
+    <p>
+      各オブジェクトにID・属性値などを文字で表示します。表示する内容と文字サイズを選べます。
+      オブジェクトが多い場合、遠くのラベルは自動的に間引かれます（動作を軽く保つため）。
+    </p>
+
+    <h3 id="s7">7. 書き出す</h3>
+    <p>結果を3つの形式で書き出せます。用途別の詳しい説明は
+      <a href="#export">書き出しの使い分け</a>を参照してください。</p>
+    <ul>
+      <li><strong>属性をCSVで保存</strong> — 全属性を表形式で。BIツールやPythonでの分析用。</li>
+      <li><strong>ID付きGLBで保存</strong> — 3Dモデルとして。他のツールでの再利用用。</li>
+      <li><strong>立面図をSVGで保存</strong> — 報告書用のベクター図。含める要素（凡例・スケールバー・
+        ラベル・傾きライン）や輪郭線の太さを選べ、塗りなしの線画モードもあります。</li>
+    </ul>
+
+    <!-- ============ データの準備 ============ -->
+    <h2 id="data">データの準備</h2>
+
+    <h3>DXF（推奨）</h3>
+    <p>オブジェクトの輪郭を表す閉じたポリラインで構成されたDXFファイル。読み込むと属性が自動計算されます。
+      以下の2系統に対応しています。</p>
+    <ul>
+      <li>閉じた<strong>3Dポリライン</strong>（クラスタリングソフトの出力形式）</li>
+      <li><strong>2Dポリライン</strong>（Rhinoなどの出力形式）— 傾いた座標系（OCS）は自動でワールド座標に変換されます</li>
+    </ul>
+    <p>レイヤー名の末尾の数字がIDとして使われます（例: <code>Stone_123</code> → <code>123</code>）。</p>
+
+    <h3>GLB + CSV</h3>
+    <p>Rhino/Grasshopperなどから書き出した3Dモデル（GLB）に、
+      別途用意したCSVの属性を紐づける方式。CSVにはID列と属性列が必要です。</p>
+
+    <h3>OBJ（背景モデル）</h3>
+    <p>フォトグラメトリで作成したテクスチャ付きモデルを背景として重ねられます。
+      OBJ本体・MTL・テクスチャ画像を<strong>まとめて選択</strong>するか、
+      <strong>フォルダごと選択</strong>してください。テクスチャは自動で適切なサイズに縮小されます。</p>
+
+    <div class="note">
+      DXFやGLBが実際の測量座標（平面直角座標など、値がとても大きい座標）を持っていても、
+      アプリが自動的に原点を寄せて正しく表示します。座標を事前に加工する必要はありません。
+    </div>
+
+    <!-- ============ 書き出しの使い分け ============ -->
+    <h2 id="export">書き出しの使い分け</h2>
+
+    <h3>CSV — データ分析用</h3>
+    <p>
+      計算した全属性を表形式で書き出します（Excel・BIツール・Pythonで開けます）。
+      文字コードはExcelでも文字化けしないUTF-8（BOM付き）です。
+    </p>
+    <p>
+      ステップ1で<strong>データ名</strong>を設定しておくと、CSVの全行に <code>Dataset</code> 列として
+      その名前が入ります。複数の調査データを横断的に分析するときの「どのデータ由来か」の
+      識別に使えます。たとえばPythonの pandas では次のように結合できます。
+    </p>
+    <pre><code>import pandas as pd, glob
+df = pd.concat([pd.read_csv(f) for f in glob.glob("*.csv")])
+df.groupby("Dataset")["Width"].describe()   # データ別に幅を集計</code></pre>
+
+    <h3>GLB — 3Dモデルとして再利用</h3>
+    <p>
+      オブジェクト名（ID）を保持したGLBを書き出します。Blender・Rhinoなど他のツールで
+      開いて再利用できます（DXF→GLBの変換としても使えます）。法線の向きは自動的に揃えられます。
+    </p>
+
+    <h3>SVG — 報告書用の立面図</h3>
+    <p>
+      モデルを正面から見た立面図を、拡大しても劣化しないベクター画像（SVG）で書き出します。
+      Illustratorなどで後から編集できます。書き出し時に以下を選べます。
+    </p>
+    <ul>
+      <li><strong>含める要素</strong> — 凡例・スケールバー・ラベル・傾きラインを個別にオン/オフ。
+        3D表示のオン/オフとは独立しているので、「画面には出さないがSVGには入れる」もできます。</li>
+      <li><strong>輪郭線の太さ</strong> — mm実寸で指定（0にすると輪郭線なし）。</li>
+      <li><strong>塗りつぶしなし（線画）モード</strong> — オブジェクトを塗らず輪郭線だけの図に。実測図・トレース図風の出力に。</li>
+    </ul>
+
+    <h3>属性を追加して読み込み直す（GLB + CSV の往復）</h3>
+    <p>
+      調査で得た独自の情報（石材種別、加工痕の有無、劣化度など）をオブジェクトごとに付けて
+      色分けしたい場合は、次の往復ワークフローが使えます。
+    </p>
+    <ol>
+      <li>DXFを読み込み、<strong>ID付きGLB</strong>と<strong>CSV</strong>を書き出します。
+        この時点でIDが自動採番され、GLBとCSVは同じIDで対応が取れています。</li>
+      <li>書き出したCSVをExcelなどで開き、<strong>任意の属性列を追加</strong>します
+        （例: <code>StoneType</code> 列に「切込接」「打込接」などを記入）。
+        ID列と行の対応は崩さないようにしてください。</li>
+      <li>アプリで<strong>手順1のGLBを読み込み</strong>、続いて<strong>編集したCSVを読み込み</strong>ます。
+        GLBのオブジェクト名（ID）とCSVのID列が突き合わされ、追加した属性が反映されます。</li>
+      <li>「3. 色分けする」で追加した属性を選べば、独自情報で色分けできます。
+        テキスト属性ならカテゴリ色、数値属性ならグラデーションになります。</li>
+    </ol>
+    <div class="note">
+      CSVを編集する際は<strong>ID列の値を変更しない</strong>でください。
+      IDがGLBのオブジェクト名と一致しなくなると、その行の属性は紐づけられません。
+      追加するのは新しい<strong>列</strong>だけにするのが安全です。
+    </div>
+
+    <!-- ============ 困ったときは ============ -->
+    <h2 id="trouble">困ったときは</h2>
+
+    <h3>ファイルを読み込めない・表示されない</h3>
+    <ul>
+      <li>DXFは<strong>閉じたポリライン</strong>である必要があります。線分（LINE）や開いた線では読み込めません。</li>
+      <li>GLBは <code>.glb</code> 形式（バイナリ)にしてください。外部バッファを参照する <code>.gltf</code> は未対応です。</li>
+      <li>読み込み中に別のファイルを読もうとすると「完了までお待ちください」と出ます。少し待ってから操作してください。</li>
+    </ul>
+
+    <h3>傾きラインや色分けが反映されない</h3>
+    <ul>
+      <li>傾きラインはDXFやサンプルなど、輪郭データを持つモデルで利用できます。</li>
+      <li>フィルタで除外したオブジェクトには傾きラインも引かれません（意図した連動です）。</li>
+    </ul>
+
+    <h3>全体表示で余白が大きい／モデルが小さい</h3>
+    <p>ビュー右上の「<strong>全体</strong>」ボタンを押すと、余白5%でちょうど収まる大きさに調整されます。
+      斜めから見ている場合も、モデルが画面の中央に来るように配置されます。</p>
+
+    <h3>操作しても反応がないとき（上級者向け）</h3>
+    <p>
+      ブラウザの開発者ツール（<kbd>F12</kbd>）を開き、Console（コンソール）タブに
+      赤いエラーが出ていないか確認すると原因の手がかりになります。
+      不具合を報告する際は、そのエラー文と、使っている版（画面のバージョン表記）を添えると解決が早まります。
+    </p>
+
+    <h3>データの安全性について</h3>
+    <p>
+      読み込んだデータはブラウザの中だけで処理され、どこにも送信されません。
+      ページを閉じるとデータは消えます（自動保存はされません）。必要な結果は書き出して保存してください。
+    </p>
+
+    <a class="back-to-app" href="index.html" data-close-tab>← アプリに戻る</a>
+
+    <footer>
+      Geometry Attribute Colorizer <span id="ver-foot">v1.0.0</span> — 操作ガイド<br>
+      石垣調査ワークフローのための、属性計算・色分け可視化ツール
+    </footer>
+  </main>
+</div>
+
+<script>
+  // 「アプリに戻る」: このヘルプがアプリから開かれた別タブなら閉じる。
+  // (アプリの元タブがそのまま残っているので、閉じれば実質「戻る」になる)
+  // 直接URLで開かれた等でタブを閉じられない場合は、通常どおりアプリへ遷移する
+  document.querySelectorAll("[data-close-tab]").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      window.close();
+      // window.close() が効かなかった場合のフォールバック(このタブでアプリを開く)
+      setTimeout(() => { window.location.href = a.getAttribute("href"); }, 120);
+    });
+  });
+
+  // バージョン表記を一箇所で管理（アプリのAPP_VERSIONと揃える）
+  const HELP_VERSION = "1.0.0";
+  document.getElementById("ver").textContent = "v" + HELP_VERSION;
+  document.getElementById("ver-foot").textContent = "v" + HELP_VERSION;
+
+  // テーマ切替（アプリと同じダーク/ライト）
+  const btn = document.getElementById("theme-btn");
+  let light = false;
+  btn.addEventListener("click", () => {
+    light = !light;
+    document.body.classList.toggle("light", light);
+    btn.textContent = light ? "🌙 ダーク" : "☀ ライト";
+  });
+
+  // 現在地のハイライト（スクロール位置から、いま見ている見出しを判定する）
+  const navLinks = [...document.querySelectorAll('nav a')];
+  const targets = navLinks
+    .map(a => { const id = a.getAttribute('href').slice(1); const el = document.getElementById(id); return el ? { a, el } : null; })
+    .filter(Boolean);
+
+  function updateActiveNav() {
+    // 画面上端から少し下（120px）を基準線とし、それを最後に越えた見出しを現在地とする
+    const line = 120;
+    let current = targets[0];
+    for (const t of targets) {
+      if (t.el.getBoundingClientRect().top <= line) current = t;
+      else break;
+    }
+    navLinks.forEach(a => { a.style.borderLeftColor = "transparent"; a.style.color = ""; });
+    if (current) {
+      current.a.style.borderLeftColor = "var(--accent)";
+      current.a.style.color = "var(--ink)";
+    }
+  }
+  window.addEventListener("scroll", updateActiveNav, { passive: true });
+  window.addEventListener("resize", updateActiveNav);
+  updateActiveNav();
+</script>
+</body>
+</html>
