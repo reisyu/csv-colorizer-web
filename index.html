@@ -704,6 +704,12 @@
     <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
       SVGはモデルの正面から見た平行投影の立面図です。現在の色分け・フィルタ・ラベル設定が反映されます
     </div>
+    <div class="row">
+      <button class="ghost" id="export-current-view-svg-btn" disabled style="margin-top:0">現在のビューをSVGで保存</button>
+    </div>
+    <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
+      画面に表示されている通りの遠近感でSVGを書き出します(パースあり)。スケールバーは意味を持たないため出力されません
+    </div>
     <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
       GLBはオブジェクト名(ID)を保持したまま書き出されます。Blender等で再利用できます
     </div>
@@ -974,7 +980,7 @@ let meshes = [];                 // {mesh, matchName} の配列
 let csvRows = [];                // CSVの行(オブジェクトの配列)
 let csvColumns = [];             // 列名
 let originalMaterials = new Map(); // mesh.uuid -> 元マテリアル
-const APP_VERSION = "1.0.0";     // リリース時に更新する(CHANGELOG.mdと対応)
+const APP_VERSION = "1.1.0";     // リリース時に更新する(CHANGELOG.mdと対応)
 
 let labelEntries = [];           // ラベル { el, worldPos } の配列(定義はラベルセクション)
 let modelSize = 10;              // モデル全体のサイズ(距離カリングの基準に使う)
@@ -1225,6 +1231,7 @@ function loadGLBFile(file) {
       document.getElementById("glb-btn").textContent = file.name;
       document.getElementById("export-glb-btn").disabled = false;
       document.getElementById("export-svg-btn").disabled = false;
+      document.getElementById("export-current-view-svg-btn").disabled = false;
       setDatasetNameFromFile(file.name);
       setStatus(`GLBを読み込みました: ${meshes.length} メッシュ`);
       updateStepSummaries();
@@ -1775,6 +1782,7 @@ function loadDXFFile(file) {
       document.getElementById("glb-btn").textContent = file.name;
       document.getElementById("export-glb-btn").disabled = false;
       document.getElementById("export-svg-btn").disabled = false;
+      document.getElementById("export-current-view-svg-btn").disabled = false;
 
       // --- 計算した属性をCSVとして読み込み、自動で色分けまで実行 ---
       loadCSVText(csvLines.join("\n"), "(自動計算) " + file.name.replace(/\.dxf$/i, "") + "_attributes.csv");
@@ -1975,6 +1983,68 @@ function exportGLB() {
 
 document.getElementById("export-glb-btn").addEventListener("click", exportGLB);
 
+/* 立面図SVG・現在のビューSVGで共通の凡例(タイトル・ヒストグラム・
+   グラデーションバー or カテゴリ凡例)を生成する。lastLegendStateが
+   無ければ何も出力しない */
+function buildLegendSVGParts(items, contentH, margin) {
+  const parts = [];
+  if (!lastLegendState) return parts;
+  const L = lastLegendState;
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lx = margin, ly = contentH + margin * 2;
+  parts.push(`<text x="${lx}" y="${ly}" font-size="14" fill="#222222">${esc(attrLabel(L.attr))}  n=${items.length}</text>`);
+
+  if (L.numericMode) {
+    const barW = 400, barH = 14, histH = 40;
+    // ヒストグラム(表示中の石の値で集計)
+    const NBINS = 24;
+    const counts = new Array(NBINS).fill(0);
+    const span = L.vmax - L.vmin;
+    for (const item of items) {
+      const row = attributesByMesh.get(item.mesh.uuid);
+      if (!row) continue;
+      const v = Number(row[L.attr]);
+      if (!Number.isFinite(v)) continue;
+      const t = span === 0 ? 0.5 : Math.max(0, Math.min(1, (v - L.vmin) / span));
+      counts[Math.min(NBINS - 1, Math.floor(t * NBINS))]++;
+    }
+    const maxCount = Math.max(...counts, 1);
+    const binW = barW / NBINS;
+    for (let b = 0; b < NBINS; b++) {
+      const h = counts[b] / maxCount * histH;
+      const binMid = L.vmin + span * ((b + 0.5) / NBINS);
+      const rgb = numericToColor(binMid, L.vmin, L.vmax, L.preset, L.cLow, L.cHigh, L.useMid, L.cMid, L.invert);
+      const fill = counts[b] === 0 ? "#dddddd" : rgbToCss(rgb);
+      parts.push(`<rect x="${(lx + b * binW).toFixed(1)}" y="${(ly + 8 + histH - h).toFixed(1)}" width="${(binW - 1).toFixed(1)}" height="${Math.max(h, 0.5).toFixed(1)}" fill="${fill}"/>`);
+    }
+    // グラデーションバー
+    const stops = [];
+    for (let i = 0; i <= 10; i++) {
+      const rgb = numericToColor(L.vmin + span * (i / 10), L.vmin, L.vmax, L.preset, L.cLow, L.cHigh, L.useMid, L.cMid, L.invert);
+      stops.push(`<stop offset="${i * 10}%" stop-color="${rgbToCss(rgb)}"/>`);
+    }
+    parts.push(`<defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="0">${stops.join("")}</linearGradient></defs>`);
+    parts.push(`<rect x="${lx}" y="${ly + 12 + histH}" width="${barW}" height="${barH}" fill="url(#grad)"/>`);
+    parts.push(`<text x="${lx}" y="${ly + 12 + histH + barH + 16}" font-size="12" fill="#222222">${Number(L.vmin.toPrecision(5))}</text>`);
+    parts.push(`<text x="${lx + barW}" y="${ly + 12 + histH + barH + 16}" font-size="12" fill="#222222" text-anchor="end">${Number(L.vmax.toPrecision(5))}</text>`);
+  } else {
+    // カテゴリ凡例(「その他」は1行に集約)
+    let cy2 = ly + 12;
+    let svgOthers = 0;
+    for (const [cat, rgb] of Object.entries(categoryColorCache)) {
+      if (categoryOthers.has(cat)) { svgOthers++; continue; }
+      parts.push(`<rect x="${lx}" y="${cy2}" width="12" height="12" fill="${rgbToCss(rgb)}"/>`);
+      parts.push(`<text x="${lx + 18}" y="${cy2 + 11}" font-size="12" fill="#222222">${esc(cat || "(空欄)")}</text>`);
+      cy2 += 18;
+    }
+    if (svgOthers > 0) {
+      parts.push(`<rect x="${lx}" y="${cy2}" width="12" height="12" fill="${rgbToCss(OTHER_COLOR)}"/>`);
+      parts.push(`<text x="${lx + 18}" y="${cy2 + 11}" font-size="12" fill="#222222">その他 ${svgOthers}種</text>`);
+    }
+  }
+  return parts;
+}
+
 /* ============================================================
    立面図SVG書き出し
    ・全石の面法線の平均を水平化した方向から見た正射投影(壁の正面)
@@ -2134,60 +2204,7 @@ function exportElevationSVG() {
   }
 
   // --- 凡例 ---
-  if (incLegend && lastLegendState) {
-    const L = lastLegendState;
-    const lx = margin, ly = contentH + margin * 2;
-    parts.push(`<text x="${lx}" y="${ly}" font-size="14" fill="#222222">${esc(attrLabel(L.attr))}  n=${items.length}</text>`);
-
-    if (L.numericMode) {
-      const barW = 400, barH = 14, histH = 40;
-      // ヒストグラム(表示中の石の値で集計)
-      const NBINS = 24;
-      const counts = new Array(NBINS).fill(0);
-      const span = L.vmax - L.vmin;
-      for (const item of items) {
-        const row = attributesByMesh.get(item.mesh.uuid);
-        if (!row) continue;
-        const v = Number(row[L.attr]);
-        if (!Number.isFinite(v)) continue;
-        const t = span === 0 ? 0.5 : Math.max(0, Math.min(1, (v - L.vmin) / span));
-        counts[Math.min(NBINS - 1, Math.floor(t * NBINS))]++;
-      }
-      const maxCount = Math.max(...counts, 1);
-      const binW = barW / NBINS;
-      for (let b = 0; b < NBINS; b++) {
-        const h = counts[b] / maxCount * histH;
-        const binMid = L.vmin + span * ((b + 0.5) / NBINS);
-        const rgb = numericToColor(binMid, L.vmin, L.vmax, L.preset, L.cLow, L.cHigh, L.useMid, L.cMid, L.invert);
-        const fill = counts[b] === 0 ? "#dddddd" : rgbToCss(rgb);
-        parts.push(`<rect x="${(lx + b * binW).toFixed(1)}" y="${(ly + 8 + histH - h).toFixed(1)}" width="${(binW - 1).toFixed(1)}" height="${Math.max(h, 0.5).toFixed(1)}" fill="${fill}"/>`);
-      }
-      // グラデーションバー
-      const stops = [];
-      for (let i = 0; i <= 10; i++) {
-        const rgb = numericToColor(L.vmin + span * (i / 10), L.vmin, L.vmax, L.preset, L.cLow, L.cHigh, L.useMid, L.cMid, L.invert);
-        stops.push(`<stop offset="${i * 10}%" stop-color="${rgbToCss(rgb)}"/>`);
-      }
-      parts.push(`<defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="0">${stops.join("")}</linearGradient></defs>`);
-      parts.push(`<rect x="${lx}" y="${ly + 12 + histH}" width="${barW}" height="${barH}" fill="url(#grad)"/>`);
-      parts.push(`<text x="${lx}" y="${ly + 12 + histH + barH + 16}" font-size="12" fill="#222222">${Number(L.vmin.toPrecision(5))}</text>`);
-      parts.push(`<text x="${lx + barW}" y="${ly + 12 + histH + barH + 16}" font-size="12" fill="#222222" text-anchor="end">${Number(L.vmax.toPrecision(5))}</text>`);
-    } else {
-      // カテゴリ凡例(「その他」は1行に集約)
-      let cy2 = ly + 12;
-      let svgOthers = 0;
-      for (const [cat, rgb] of Object.entries(categoryColorCache)) {
-        if (categoryOthers.has(cat)) { svgOthers++; continue; }
-        parts.push(`<rect x="${lx}" y="${cy2}" width="12" height="12" fill="${rgbToCss(rgb)}"/>`);
-        parts.push(`<text x="${lx + 18}" y="${cy2 + 11}" font-size="12" fill="#222222">${esc(cat || "(空欄)")}</text>`);
-        cy2 += 18;
-      }
-      if (svgOthers > 0) {
-        parts.push(`<rect x="${lx}" y="${cy2}" width="12" height="12" fill="${rgbToCss(OTHER_COLOR)}"/>`);
-        parts.push(`<text x="${lx + 18}" y="${cy2 + 11}" font-size="12" fill="#222222">その他 ${svgOthers}種</text>`);
-      }
-    }
-  }
+  if (incLegend) parts.push(...buildLegendSVGParts(items, contentH, margin));
 
   // --- スケールバー(右下) ---
   if (incScalebar) {
@@ -2234,6 +2251,147 @@ document.getElementById("svg-no-fill").addEventListener("change", (e) => {
 });
 
 document.getElementById("export-svg-btn").addEventListener("click", exportElevationSVG);
+
+/* ============================================================
+   現在のビューをSVGで保存
+   ・立面図SVGと違い、現在のカメラの位置・向き・ズームをそのまま使い、
+     画面に見えている通りの遠近感(パースあり)で書き出す
+   ・距離により見かけの縮尺が変わるため、スケールバーは出力しない。
+     輪郭線・傾きラインの太さは注視点(orbit.target)での見かけの縮尺を基準にする
+   ・近クリップ面より手前(カメラの後ろ側)に頂点がある石・ラインは
+     投影が破綻するため、クリッピングはせず丸ごと除外する
+============================================================ */
+function exportCurrentViewSVG() {
+  const viewMatrix = camera.matrixWorldInverse;
+  const tmpV = new THREE.Vector3();
+  const viewZ = (v) => tmpV.copy(v).applyMatrix4(viewMatrix).z;
+
+  const items = [];
+  for (const { mesh, matchName } of meshes) {
+    if (!mesh.userData.isContour) continue;
+    if (!mesh.visible || mesh.userData.filtered) continue;
+    const pos = mesh.geometry.getAttribute("position");
+    if (!pos || pos.count < 3) continue;
+
+    let behind = false, depthSum = 0;
+    const pts = [];
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      if (viewZ(v) >= -camera.near) { behind = true; break; }
+      depthSum += tmpV.z;
+      const ndc = v.clone().project(camera);
+      pts.push([ndc.x, ndc.y]);
+    }
+    if (behind) continue;
+    items.push({ mesh, matchName, pts, depth: depthSum / pos.count });
+  }
+
+  if (items.length === 0) {
+    setStatus("現在のビューの範囲にオブジェクトがありません。カメラの向きを確認してください。", true);
+    return;
+  }
+
+  items.sort((a, b) => a.depth - b.depth);  // 奥(視点から遠い)から手前へ描画
+
+  const incLegend = document.getElementById("svg-inc-legend").checked;
+  const incLabels = document.getElementById("svg-inc-labels").checked;
+  const incLines = document.getElementById("svg-inc-lines").checked;
+  const outlineMM = Number(document.getElementById("svg-outline-width").value);
+
+  const contentW = 1600, margin = 50;
+  const legendH = incLegend ? 130 : 0;
+  const aspect = camera.aspect || 1;
+  const contentH = contentW / aspect;
+  const svgW = contentW + margin * 2;
+  const svgH = contentH + margin * 2 + legendH;
+  const toX = (nx) => margin + (nx + 1) / 2 * contentW;
+  const toY = (ny) => margin + (1 - ny) / 2 * contentH;
+
+  // 注視点での見かけの縮尺(px / 実寸1単位)。パースのため距離で変わる近似値
+  const focusDist = Math.max(camera.position.distanceTo(orbit.target), camera.near * 2);
+  const pxPerUnit = contentH / (2 * focusDist * Math.tan((camera.fov * Math.PI / 180) / 2));
+
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const parts = [];
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${Math.ceil(svgH)}" viewBox="0 0 ${svgW} ${Math.ceil(svgH)}" font-family="sans-serif">`);
+  parts.push(`<rect width="100%" height="100%" fill="#ffffff"/>`);
+
+  // --- 石のポリゴン ---
+  const noFill = document.getElementById("svg-no-fill").checked;
+  let outlinePx = Number.isFinite(outlineMM) && outlineMM > 0
+    ? Math.max(0.2, (outlineMM / 1000) * pxPerUnit) : 0;
+  if (noFill && outlinePx <= 0) outlinePx = Math.max(0.2, (10 / 1000) * pxPerUnit);
+  const strokeAttr = outlinePx > 0
+    ? `stroke="#444444" stroke-width="${outlinePx.toFixed(2)}" stroke-linejoin="round"` : `stroke="none"`;
+  for (const item of items) {
+    const fill = noFill ? "none" : "#" + item.mesh.material.color.getHexString();
+    const ptsStr = item.pts.map(([nx, ny]) => `${toX(nx).toFixed(2)},${toY(ny).toFixed(2)}`).join(" ");
+    parts.push(`<polygon points="${ptsStr}" fill="${fill}" ${strokeAttr}/>`);
+  }
+
+  // --- 傾きライン: 書き出し設定でONのとき ---
+  if (incLines) {
+    const a3 = new THREE.Vector3(), b3 = new THREE.Vector3();
+    for (const item of items) {
+      const rl = item.mesh.userData.rectLine;
+      if (!rl) continue;
+      a3.set(rl.a[0], rl.a[1], rl.a[2]);
+      b3.set(rl.b[0], rl.b[1], rl.b[2]);
+      if (viewZ(a3) >= -camera.near || viewZ(b3) >= -camera.near) continue;  // 視界外の線は書き出さない
+      const na = a3.clone().project(camera), nb = b3.clone().project(camera);
+      const lc = currentLineColors();
+      const [r, g, bch] = symmetricAngleColor(rl.angle, lc.center, lc.edge);
+      const col = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(bch * 255)})`;
+      const x1 = toX(na.x).toFixed(1), y1 = toY(na.y).toFixed(1);
+      const x2 = toX(nb.x).toFixed(1), y2 = toY(nb.y).toFixed(1);
+      const swPx = Math.max(1, (Number(document.getElementById("line-width").value) / 1000) * pxPerUnit);
+      parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${swPx.toFixed(1)}" stroke-linecap="round"/>`);
+    }
+  }
+
+  // --- ラベル: 書き出し設定でONのとき(内容はステップ6の選択に従う) ---
+  if (incLabels) {
+    const keys = getSelectedLabelKeys();
+    const multi = keys.length > 1;
+    for (const item of items) {
+      const row = attributesByMesh.get(item.mesh.uuid);
+      const linesOut = [];
+      for (const key of keys) {
+        if (key === "__id__") linesOut.push(item.matchName);
+        else if (row && row[key] !== undefined && String(row[key]).trim() !== "") {
+          linesOut.push((multi ? key + ": " : "") + formatValue(row[key]));
+        }
+      }
+      if (linesOut.length === 0) continue;
+      let cx = 0, cy = 0;
+      for (const [nx, ny] of item.pts) { cx += nx; cy += ny; }
+      cx /= item.pts.length; cy /= item.pts.length;
+      const fs = 11;
+      const tx = toX(cx).toFixed(1);
+      const ty0 = toY(cy) - (linesOut.length - 1) * fs / 2;
+      const spans = linesOut.map((t, i) =>
+        `<tspan x="${tx}" y="${(ty0 + i * fs * 1.2).toFixed(1)}">${esc(t)}</tspan>`).join("");
+      parts.push(`<text text-anchor="middle" font-size="${fs}" fill="#222222">${spans}</text>`);
+    }
+  }
+
+  // --- 凡例(スケールバーはパースでは意味を持たないため出力しない) ---
+  if (incLegend) parts.push(...buildLegendSVGParts(items, contentH, margin));
+
+  parts.push(`<text x="${svgW - margin}" y="${Math.ceil(svgH) - 8}" font-size="9" fill="#999999" text-anchor="end">Geometry Attribute Colorizer v${APP_VERSION}</text>`);
+  parts.push(`</svg>`);
+
+  const blob = new Blob([parts.join("\n")], { type: "image/svg+xml;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "view.svg";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus(`現在のビューをSVGで書き出しました: ${items.length} オブジェクト`);
+}
+
+document.getElementById("export-current-view-svg-btn").addEventListener("click", exportCurrentViewSVG);
 
 /* ============================================================
    ID振り直し(立面図ビューで左下から順に採番する)
@@ -3801,7 +3959,8 @@ function loadSampleData() {
   document.getElementById("sample-badge").classList.add("active");
   document.getElementById("sample-badge").textContent = `サンプルデータを表示中(${meshes.length} オブジェクト)`;
   document.getElementById("export-glb-btn").disabled = false;
-      document.getElementById("export-svg-btn").disabled = false;
+  document.getElementById("export-svg-btn").disabled = false;
+  document.getElementById("export-current-view-svg-btn").disabled = false;
 
   // --- CSVも読み込み、少し待ってから自動で色分けを実行 ---
   loadCSVText(csvLines.join("\n"), "サンプルの自動計算属性");
