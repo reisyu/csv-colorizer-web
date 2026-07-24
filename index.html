@@ -59,20 +59,22 @@
   }
   #app-version { color: var(--ink-dim); opacity: 0.7; font-size: 10px; }
   #help-link {
+    display: inline-block;
     color: var(--accent);
     text-decoration: none;
-    font-size: 10px;
+    font-size: 12px;
+    font-weight: 700;
     border: 1px solid var(--accent-dim);
     border-radius: 4px;
-    padding: 1px 6px;
-    margin-left: 4px;
+    padding: 3px 10px;
+    margin: 6px 0 16px;
     white-space: nowrap;
   }
   #help-link:hover { background: var(--accent-dim); color: var(--ink); }
   #sidebar .subtitle {
     font-size: 11px;
     color: var(--ink-dim);
-    margin-bottom: 18px;
+    margin-bottom: 4px;
   }
   .step {
     border: 1px solid var(--panel-edge);
@@ -115,6 +117,36 @@
   .step.collapsed > *:not(.step-label) { display: none !important; }
   .row { margin-bottom: 10px; }
   .row:last-child { margin-bottom: 0; }
+  .sub-header {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    margin: 14px 0 6px;
+  }
+  .sub-header:first-child { margin-top: 0; }
+  details.adv {
+    margin: 10px 0;
+    border-top: 1px solid var(--panel-edge);
+    padding-top: 10px;
+  }
+  details.adv summary {
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--ink-dim);
+    list-style: none;
+    user-select: none;
+  }
+  details.adv summary::-webkit-details-marker { display: none; }
+  details.adv summary::before {
+    content: "▸";
+    display: inline-block;
+    width: 1em;
+    transition: transform .15s;
+  }
+  details.adv[open] summary::before { transform: rotate(90deg); }
+  details.adv summary:hover { color: var(--ink); }
+  details.adv > .row:first-of-type { margin-top: 10px; }
   label.small {
     display: block;
     font-size: 11px;
@@ -487,7 +519,8 @@
 
 <aside id="sidebar">
   <h1>Geometry Attribute Colorizer</h1>
-  <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー <span id="app-version"></span> <a href="help.html" target="gac-help" id="help-link">? 操作ガイド</a></div>
+  <div class="subtitle">3Dジオメトリの属性計算・色分けビューアー <span id="app-version"></span></div>
+  <a href="help.html" target="gac-help" id="help-link">? 操作ガイド</a>
 
   <div id="status" style="margin-bottom:12px">モデル(GLB / DXF)を読み込んで開始してください。</div>
 
@@ -551,13 +584,16 @@
   <!-- STEP 3: 色分け -->
   <div class="step">
     <div class="step-label">3. 色分けする</div>
+
     <div class="row">
       <label class="small" for="attribute">色分けする属性</label>
       <select id="attribute" disabled><option>(属性データを読み込んでください)</option></select>
       <div id="attr-description" style="font-size:11px;color:var(--ink-dim);margin-top:4px;line-height:1.5"></div>
     </div>
+
+    <div class="sub-header">配色</div>
     <div class="row">
-      <label class="small" for="preset">配色</label>
+      <label class="small" for="preset">配色パターン</label>
       <select id="preset">
         <option value="RED_BLUE">赤 → 青</option>
         <option value="RED_GREEN">赤 → 緑</option>
@@ -579,25 +615,30 @@
         <label class="checkbox-row"><input type="checkbox" id="use-mid"> 中間色を使う</label>
       </div>
     </div>
-    <div class="row">
-      <label class="checkbox-row"><input type="checkbox" id="manual-range"> 範囲を手動で指定</label>
-    </div>
-    <div class="row" id="manual-range-inputs" style="display:none">
-      <div style="display:flex; gap:8px">
-        <div style="flex:1">
-          <label class="small" for="range-min">最小値</label>
-          <input type="text" id="range-min" inputmode="decimal" placeholder="(空欄で自動)">
-        </div>
-        <div style="flex:1">
-          <label class="small" for="range-max">最大値</label>
-          <input type="text" id="range-max" inputmode="decimal" placeholder="(空欄で自動)">
-        </div>
+
+    <details class="adv">
+      <summary>詳細設定(範囲の固定・カテゴリ数の調整)</summary>
+      <div class="row">
+        <label class="checkbox-row"><input type="checkbox" id="manual-range"> 範囲を手動で指定</label>
       </div>
-      <button class="ghost" id="autofill-range-btn" style="margin-top:8px">現在の最小・最大を取得</button>
-    </div>
-    <div class="row" id="cat-top-only-row">
-      <label class="checkbox-row"><input type="checkbox" id="cat-top-only"> テキスト属性は上位7カテゴリのみ色分け(残りは「その他」)</label>
-    </div>
+      <div class="row" id="manual-range-inputs" style="display:none">
+        <div style="display:flex; gap:8px">
+          <div style="flex:1">
+            <label class="small" for="range-min">最小値</label>
+            <input type="text" id="range-min" inputmode="decimal" placeholder="(空欄で自動)">
+          </div>
+          <div style="flex:1">
+            <label class="small" for="range-max">最大値</label>
+            <input type="text" id="range-max" inputmode="decimal" placeholder="(空欄で自動)">
+          </div>
+        </div>
+        <button class="ghost" id="autofill-range-btn" style="margin-top:8px">現在の最小・最大を取得</button>
+      </div>
+      <div class="row" id="cat-top-only-row">
+        <label class="checkbox-row"><input type="checkbox" id="cat-top-only"> テキスト属性は上位7カテゴリのみ色分け(残りは「その他」)</label>
+      </div>
+    </details>
+
     <div class="row">
       <button class="action" id="apply-btn" disabled>色分けを実行</button>
       <button class="ghost" id="reset-btn" disabled>色をリセット</button>
@@ -680,39 +721,48 @@
   <!-- STEP 5: 書き出し -->
   <div class="step">
     <div class="step-label">7. 書き出す</div>
+
+    <div class="sub-header">データ</div>
     <div class="row">
       <button class="ghost" id="download-csv-btn" disabled style="margin-top:0">属性をCSVで保存</button>
     </div>
+
+    <div class="sub-header">3Dモデル</div>
     <div class="row">
       <button class="ghost" id="export-glb-btn" disabled style="margin-top:0">ID付きGLBで保存</button>
     </div>
-    <div class="row">
-      <label class="small">立面図SVGに含める要素</label>
-      <label class="checkbox-row"><input type="checkbox" id="svg-inc-legend" checked> 凡例(ヒストグラム付き)</label>
-      <label class="checkbox-row"><input type="checkbox" id="svg-inc-scalebar" checked> スケールバー</label>
-      <label class="checkbox-row"><input type="checkbox" id="svg-inc-labels"> ラベル(内容はステップ6の選択に従う)</label>
-      <label class="checkbox-row"><input type="checkbox" id="svg-inc-lines"> 傾きライン(色・太さはステップ4の設定に従う)</label>
-      <label class="checkbox-row"><input type="checkbox" id="svg-no-fill"> 塗りつぶしなし(輪郭線のみの線画にする)</label>
+    <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
+      オブジェクト名(ID)を保持したまま書き出されます。Blender等で再利用できます
     </div>
-    <div class="row">
-      <label class="small" for="svg-outline-width">オブジェクトの輪郭線の太さ(mm実寸。0で輪郭線なし)</label>
-      <input type="text" id="svg-outline-width" inputmode="decimal" value="10">
-    </div>
+
+    <div class="sub-header">SVG(ベクター図)</div>
     <div class="row">
       <button class="ghost" id="export-svg-btn" disabled style="margin-top:0">立面図をSVGで保存</button>
     </div>
     <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
-      SVGはモデルの正面から見た平行投影の立面図です。現在の色分け・フィルタ・ラベル設定が反映されます
+      モデルの正面から見た平行投影です。実寸のスケールバーを入れられます
     </div>
     <div class="row">
       <button class="ghost" id="export-current-view-svg-btn" disabled style="margin-top:0">現在のビューをSVGで保存</button>
     </div>
     <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
-      画面に表示されている通りの遠近感でSVGを書き出します(パースあり)。スケールバーは意味を持たないため出力されません
+      画面に見えている通りの遠近感(パースあり)で書き出します。スケールバーは非対応です
     </div>
-    <div class="row" style="font-size:11px;color:var(--ink-dim);line-height:1.5">
-      GLBはオブジェクト名(ID)を保持したまま書き出されます。Blender等で再利用できます
-    </div>
+
+    <details class="adv">
+      <summary>SVGの詳細設定(含める要素・線の太さ)</summary>
+      <div class="row">
+        <label class="checkbox-row"><input type="checkbox" id="svg-inc-legend" checked> 凡例(ヒストグラム付き)</label>
+        <label class="checkbox-row"><input type="checkbox" id="svg-inc-scalebar" checked> スケールバー(立面図のみ)</label>
+        <label class="checkbox-row"><input type="checkbox" id="svg-inc-labels"> ラベル(内容はステップ6の選択に従う)</label>
+        <label class="checkbox-row"><input type="checkbox" id="svg-inc-lines"> 傾きライン(色・太さはステップ4の設定に従う)</label>
+        <label class="checkbox-row"><input type="checkbox" id="svg-no-fill"> 塗りつぶしなし(輪郭線のみの線画にする)</label>
+      </div>
+      <div class="row">
+        <label class="small" for="svg-outline-width">オブジェクトの輪郭線の太さ(mm実寸。0で輪郭線なし)</label>
+        <input type="text" id="svg-outline-width" inputmode="decimal" value="10">
+      </div>
+    </details>
   </div>
 </aside>
 
@@ -980,7 +1030,7 @@ let meshes = [];                 // {mesh, matchName} の配列
 let csvRows = [];                // CSVの行(オブジェクトの配列)
 let csvColumns = [];             // 列名
 let originalMaterials = new Map(); // mesh.uuid -> 元マテリアル
-const APP_VERSION = "1.1.0";     // リリース時に更新する(CHANGELOG.mdと対応)
+const APP_VERSION = "1.1.1";     // リリース時に更新する(CHANGELOG.mdと対応)
 
 let labelEntries = [];           // ラベル { el, worldPos } の配列(定義はラベルセクション)
 let modelSize = 10;              // モデル全体のサイズ(距離カリングの基準に使う)
